@@ -95,6 +95,14 @@ def analyze_correlation_change(df):
     plt.savefig('correlation_comparison.png')
     print(f"\n[알림] 상관관계 비교 히트맵이 'correlation_comparison.png'로 저장되었습니다.")
     
+    # 이상 기간(Anomaly Period) 단독 히트맵 저장
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(corr_anomaly, annot=True, fmt='.2f', cmap='RdBu_r', center=0, vmin=-1, vmax=1)
+    plt.title('Anomaly Period Correlation (24.11~26.01)')
+    plt.tight_layout()
+    plt.savefig('correlation_anomaly_only.png')
+    print(f"\n[알림] 이상 기간 단독 히트맵이 'correlation_anomaly_only.png'로 저장되었습니다.")
+    
     # 변화량 출력
     diff = corr_anomaly[target_col] - corr_normal[target_col]
     print("\n[상관관계 변화 (Anomaly - Normal)]")

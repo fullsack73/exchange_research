@@ -100,7 +100,7 @@ def visualize_results(importances, target_corr, corr_matrix):
     # Heatmap 시각화
     plt.figure(figsize=(10, 8))
     sns.heatmap(corr_matrix, annot=True, fmt='.2f', cmap='RdBu_r', center=0, vmin=-1, vmax=1)
-    plt.title('환율 및 주요 변수 상관관계 히트맵')
+    plt.title('Baseline Correlation Matrix(2010-2025)')
     plt.tight_layout()
     
     save_path = 'exchange_rate_heatmap.png'
