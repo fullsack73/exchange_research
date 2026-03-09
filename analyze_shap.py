@@ -85,6 +85,25 @@ def analyze_shap_drivers(df):
     rf = RandomForestRegressor(n_estimators=200, random_state=42)
     rf.fit(X_train, y_train)
     
+    # 2.5 Random Forest Feature Importance (Anomaly 기간) bar chart
+    rf_importances = pd.DataFrame({
+        'Feature': feature_cols,
+        'Importance': rf.feature_importances_
+    }).sort_values(by='Importance', ascending=False)
+
+    plt.figure(figsize=(10, 6))
+    sns.barplot(x='Importance', y='Feature', data=rf_importances, hue='Feature', palette='viridis', legend=False)
+    for i, row in enumerate(rf_importances.itertuples()):
+        plt.text(row.Importance, i, f' {row.Importance:.3f}', va='center')
+    plt.title(f'Random Forest Feature Importance (Anomaly Period: {df_test["observation_date"].min().date()} ~)')
+    plt.xlabel('Importance')
+    plt.ylabel('')
+    plt.tight_layout()
+    plt.savefig('rf_importance_anomaly.png')
+    print(f"\n[알림] RF Feature Importance 차트가 'rf_importance_anomaly.png'로 저장되었습니다.")
+    print("\n[Random Forest 변수 중요도 (Anomaly)]")
+    print(rf_importances.to_string(index=False))
+
     # 3. SHAP 값 계산 (Anomaly 기간에 대해서)
     explainer = shap.TreeExplainer(rf)
     shap_values = explainer.shap_values(X_test)
