@@ -1,0 +1,2 @@
+Monthly RMSE - Model A (Spread only): 117.88
+Monthly RMSE - Model B (Spread + MMF): 143.38

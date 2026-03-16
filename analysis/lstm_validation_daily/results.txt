@@ -1,0 +1,2 @@
+Daily RMSE - Model A (Spread only): 83.61
+Daily RMSE - Model B (Spread + MMF): 91.30
