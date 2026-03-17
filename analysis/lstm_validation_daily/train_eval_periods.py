@@ -1,5 +1,6 @@
 import os
 import json
+from itertools import product
 import numpy as np
 import pandas as pd
 import torch
@@ -12,6 +13,7 @@ import matplotlib.pyplot as plt
 
 torch.manual_seed(42)
 np.random.seed(42)
+torch.set_num_threads(1)
 
 
 class ExRateLSTM(nn.Module):
@@ -50,7 +52,92 @@ def inverse_target(scaler: StandardScaler, y_scaled: np.ndarray, n_features: int
     return scaler.inverse_transform(dummy)[:, 0]
 
 
-def run_one_period(df_period: pd.DataFrame, period_name: str, out_dir: str):
+def split_train_val(x_train: np.ndarray, y_train: np.ndarray, val_ratio: float = 0.2):
+    n = len(x_train)
+    val_n = max(20, int(n * val_ratio))
+    val_n = min(val_n, n - 20)
+    train_n = n - val_n
+    return x_train[:train_n], y_train[:train_n], x_train[train_n:], y_train[train_n:]
+
+
+def tune_hyperparams(
+    x_train: np.ndarray,
+    y_train: np.ndarray,
+    input_dim: int,
+    period_name: str,
+    model_name: str,
+):
+    x_fit, y_fit, x_val, y_val = split_train_val(x_train, y_train)
+
+    # Cap tuning sample size for speed, then retrain on full train set with the best config.
+    max_tune_train = 1200
+    max_tune_val = 300
+    if len(x_fit) > max_tune_train:
+        x_fit = x_fit[-max_tune_train:]
+        y_fit = y_fit[-max_tune_train:]
+    if len(x_val) > max_tune_val:
+        x_val = x_val[-max_tune_val:]
+        y_val = y_val[-max_tune_val:]
+
+    if period_name.startswith("full_"):
+        grid = {
+            "hidden_dim": [16, 32],
+            "num_layers": [1],
+            "lr": [0.001],
+            "num_epochs": [30],
+            "batch_size": [32],
+        }
+    else:
+        grid = {
+            "hidden_dim": [16, 32],
+            "num_layers": [1],
+            "lr": [0.001],
+            "num_epochs": [50, 90],
+            "batch_size": [32],
+        }
+
+    best = None
+    best_rmse = float("inf")
+
+    for hidden_dim, num_layers, lr, num_epochs, batch_size in product(
+        grid["hidden_dim"],
+        grid["num_layers"],
+        grid["lr"],
+        grid["num_epochs"],
+        grid["batch_size"],
+    ):
+        loader = DataLoader(
+            TensorDataset(torch.FloatTensor(x_fit), torch.FloatTensor(y_fit)),
+            batch_size=batch_size,
+            shuffle=True,
+        )
+
+        model = ExRateLSTM(input_dim=input_dim, hidden_dim=hidden_dim, num_layers=num_layers)
+        criterion = nn.MSELoss()
+        optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+        train_model(model, loader, criterion, optimizer, num_epochs=num_epochs)
+
+        model.eval()
+        with torch.no_grad():
+            pred_val = model(torch.FloatTensor(x_val)).numpy()
+
+        rmse_val = float(np.sqrt(mean_squared_error(y_val, pred_val)))
+        if rmse_val < best_rmse:
+            best_rmse = rmse_val
+            best = {
+                "hidden_dim": hidden_dim,
+                "num_layers": num_layers,
+                "lr": lr,
+                "num_epochs": num_epochs,
+                "batch_size": batch_size,
+                "val_rmse_scaled": rmse_val,
+            }
+
+    print(f"[{period_name}] Best {model_name} params: {best}")
+    return best
+
+
+def run_one_period(df_period: pd.DataFrame, period_name: str, out_dir: str, enable_tuning: bool = True):
     # Baseline vs Proposed feature sets
     features_a = ["USD_KRW", "RATE_SPREAD_KOR_USA"]
     features_b = ["USD_KRW", "RATE_SPREAD_KOR_USA", "MMF_total"]
@@ -87,18 +174,47 @@ def run_one_period(df_period: pd.DataFrame, period_name: str, out_dir: str):
     x_b_train, y_b_train = x_b[:train_seq_len], y_b[:train_seq_len]
     x_b_test, y_b_test = x_b[train_seq_len:], y_b[train_seq_len:]
 
-    loader_a = DataLoader(TensorDataset(torch.FloatTensor(x_a_train), torch.FloatTensor(y_a_train)), batch_size=32, shuffle=True)
-    loader_b = DataLoader(TensorDataset(torch.FloatTensor(x_b_train), torch.FloatTensor(y_b_train)), batch_size=32, shuffle=True)
+    if enable_tuning:
+        best_a = tune_hyperparams(x_a_train, y_a_train, len(features_a), period_name, "Model A")
+        best_b = tune_hyperparams(x_b_train, y_b_train, len(features_b), period_name, "Model B")
+    else:
+        best_a = {
+            "hidden_dim": 32,
+            "num_layers": 1,
+            "lr": 0.001,
+            "num_epochs": 80,
+            "batch_size": 32,
+            "val_rmse_scaled": None,
+        }
+        best_b = {
+            "hidden_dim": 32,
+            "num_layers": 1,
+            "lr": 0.001,
+            "num_epochs": 80,
+            "batch_size": 32,
+            "val_rmse_scaled": None,
+        }
 
-    model_a = ExRateLSTM(input_dim=len(features_a))
-    model_b = ExRateLSTM(input_dim=len(features_b))
+    loader_a = DataLoader(
+        TensorDataset(torch.FloatTensor(x_a_train), torch.FloatTensor(y_a_train)),
+        batch_size=best_a["batch_size"],
+        shuffle=True,
+    )
+    loader_b = DataLoader(
+        TensorDataset(torch.FloatTensor(x_b_train), torch.FloatTensor(y_b_train)),
+        batch_size=best_b["batch_size"],
+        shuffle=True,
+    )
+
+    model_a = ExRateLSTM(input_dim=len(features_a), hidden_dim=best_a["hidden_dim"], num_layers=best_a["num_layers"])
+    model_b = ExRateLSTM(input_dim=len(features_b), hidden_dim=best_b["hidden_dim"], num_layers=best_b["num_layers"])
 
     criterion = nn.MSELoss()
-    opt_a = torch.optim.Adam(model_a.parameters(), lr=0.001)
-    opt_b = torch.optim.Adam(model_b.parameters(), lr=0.001)
+    opt_a = torch.optim.Adam(model_a.parameters(), lr=best_a["lr"])
+    opt_b = torch.optim.Adam(model_b.parameters(), lr=best_b["lr"])
 
-    train_model(model_a, loader_a, criterion, opt_a)
-    train_model(model_b, loader_b, criterion, opt_b)
+    train_model(model_a, loader_a, criterion, opt_a, num_epochs=best_a["num_epochs"])
+    train_model(model_b, loader_b, criterion, opt_b, num_epochs=best_b["num_epochs"])
 
     model_a.eval()
     model_b.eval()
@@ -154,6 +270,8 @@ def run_one_period(df_period: pd.DataFrame, period_name: str, out_dir: str):
         "mae_model_a": mae_a,
         "mae_model_b": mae_b,
         "better_model": "B" if rmse_b < rmse_a else "A",
+        "best_params_a": best_a,
+        "best_params_b": best_b,
         "plot": plot_path,
     }
 
@@ -177,7 +295,8 @@ def run_experiment():
         period_df = period_df.reset_index(drop=True)
         if len(period_df) < 120:
             raise ValueError(f"{name}: not enough rows ({len(period_df)}) for daily LSTM with seq_length=30")
-        results.append(run_one_period(period_df, name, out_dir))
+        use_tuning = name != "full_2010_2025"
+        results.append(run_one_period(period_df, name, out_dir, enable_tuning=use_tuning))
 
     with open(f"{out_dir}/results.json", "w", encoding="utf-8") as f:
         json.dump(results, f, ensure_ascii=False, indent=2)
@@ -195,6 +314,8 @@ def run_experiment():
         lines.append(f"MAE A: {r['mae_model_a']:.2f}")
         lines.append(f"MAE B: {r['mae_model_b']:.2f}")
         lines.append(f"Better: Model {r['better_model']}")
+        lines.append(f"Best Params A: {r['best_params_a']}")
+        lines.append(f"Best Params B: {r['best_params_b']}")
         lines.append(f"Plot: {r['plot']}")
         lines.append("")
 
