@@ -1,0 +1,26 @@
+[
+  {
+    "period": "full_2010_2025",
+    "rows": 3705,
+    "train_rows": 2964,
+    "test_rows": 741,
+    "rmse_model_a": 65.06830328819072,
+    "rmse_model_b": 86.77741116445489,
+    "mae_model_a": 58.62936560133041,
+    "mae_model_b": 76.99754180648624,
+    "better_model": "A",
+    "plot": "analysis/lstm_validation_daily/full_2010_2025_lstm_plot.png"
+  },
+  {
+    "period": "anomaly_2024_11_to_2025_12",
+    "rows": 264,
+    "train_rows": 211,
+    "test_rows": 53,
+    "rmse_model_a": 26.25009843159878,
+    "rmse_model_b": 24.085556153831067,
+    "mae_model_a": 20.02411961864151,
+    "mae_model_b": 17.882833968948308,
+    "better_model": "B",
+    "plot": "analysis/lstm_validation_daily/anomaly_2024_11_to_2025_12_lstm_plot.png"
+  }
+]

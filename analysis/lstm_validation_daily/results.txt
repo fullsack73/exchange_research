@@ -1,2 +1,20 @@
-Daily RMSE - Model A (Spread only): 83.61
-Daily RMSE - Model B (Spread + MMF): 91.30
+Daily LSTM Comparison by Period
+- Compare Model A (Spread only) vs Model B (Spread + MMF)
+
+[full_2010_2025]
+Rows: 3705 (train=2964, test=741)
+RMSE A: 65.07
+RMSE B: 86.78
+MAE A: 58.63
+MAE B: 77.00
+Better: Model A
+Plot: analysis/lstm_validation_daily/full_2010_2025_lstm_plot.png
+
+[anomaly_2024_11_to_2025_12]
+Rows: 264 (train=211, test=53)
+RMSE A: 26.25
+RMSE B: 24.09
+MAE A: 20.02
+MAE B: 17.88
+Better: Model B
+Plot: analysis/lstm_validation_daily/anomaly_2024_11_to_2025_12_lstm_plot.png
