@@ -6,26 +6,26 @@ base_dir = '/Applications/dollar_price'
 # 처리할 작업 목록 정의
 tasks = [
     {
-        "source": "10y_bond/KOR/시장금리(월,분기,년)_13205444.csv",
-        "output": "10y_bond/KOR/10y_bond_KOR_processed.csv",
+        "source": "data/10y_bond/KOR/시장금리(월,분기,년)_13205444.csv",
+        "output": "data/10y_bond/KOR/10y_bond_KOR_processed.csv",
         "filters": {"계정항목": "국고채(10년)"},
         "value_name": "10Y_BOND_KOR"
     },
     {
-        "source": "CPI/KOR/소비자물가지수_13204503.csv",
-        "output": "CPI/KOR/CPI_KOR_processed.csv",
+        "source": "data/CPI/KOR/소비자물가지수_13204503.csv",
+        "output": "data/CPI/KOR/CPI_KOR_processed.csv",
         "filters": {"계정항목": "총지수"},
         "value_name": "CPI_KOR"
     },
     {
-        "source": "policy_rate/KOR/한국은행 기준금리 및 여수신금리_13200252.csv",
-        "output": "policy_rate/KOR/base_rate_KOR_processed.csv",
+        "source": "data/policy_rate/KOR/한국은행 기준금리 및 여수신금리_18093238.csv",
+        "output": "data/policy_rate/KOR/base_rate_KOR_processed.csv",
         "filters": {"계정항목": "한국은행 기준금리"},
         "value_name": "BASE_RATE_KOR"
     },
     {
-        "source": "production_index/KOR/산업별 생산_출하_재고 지수_13204837.csv",
-        "output": "production_index/KOR/IPI_KOR_processed.csv",
+        "source": "data/production_index/KOR/산업별 생산_출하_재고 지수_13204837.csv",
+        "output": "data/production_index/KOR/IPI_KOR_processed.csv",
         "filters": {"계정항목": "총지수", "구분코드": "생산지수(계절조정)"},
         "value_name": "IPI_KOR"
     }
@@ -81,9 +81,9 @@ def process_file(task):
                                 var_name='original_date', 
                                 value_name=task['value_name'])
 
-    # 날짜 처리 ('2010/12' -> '2010-12-01')
+    # 날짜 처리 (자동으로 포맷 인식하여 변환)
     try:
-        melted_df['observation_date'] = pd.to_datetime(melted_df['original_date'], format='%Y/%m').dt.strftime('%Y-%m-01')
+        melted_df['observation_date'] = pd.to_datetime(melted_df['original_date']).dt.strftime('%Y-%m-%d')
     except Exception as e:
         print(f"Error parsing dates: {e}")
         return

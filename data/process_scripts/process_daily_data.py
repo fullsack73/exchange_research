@@ -12,7 +12,7 @@ def clean_numeric(series):
     return s
 
 def process_cma():
-    path = os.path.join(base_dir, 'm2/KOR/CMA/운용대상별 CMA잔고 추이.csv')
+    path = os.path.join(base_dir, 'data/m2/KOR/CMA/운용대상별 CMA잔고 추이.csv')
     print(f"Reading {path}...")
     try:
         # Read the file line by line first to see encoding and structure
@@ -41,7 +41,7 @@ def process_cma():
         return pd.DataFrame()
 
 def process_mmf():
-    path = os.path.join(base_dir, 'm2/KOR/MMF/MMF_daily.csv')
+    path = os.path.join(base_dir, 'data/m2/KOR/MMF/MMF_daily.csv')
     print(f"Reading {path}...")
     try:
         with open(path, 'r', encoding='utf-8') as f:
@@ -86,7 +86,7 @@ def process_mmf():
         return pd.DataFrame()
 
 def process_exchange_rate():
-    path = os.path.join(base_dir, 'exchange_rate/환율_일별.csv')
+    path = os.path.join(base_dir, 'data/exchange_rate/환율_일별.csv')
     print(f"Reading {path}...")
     try:
         df = pd.read_csv(path)
@@ -120,6 +120,11 @@ if __name__ == "__main__":
     er_df = process_exchange_rate()
     print("ER shape:", er_df.shape)
     
+    # 가공된 환율 데이터 개별 저장
+    er_out_path = os.path.join(base_dir, 'data/exchange_rate/USD_KRW_processed.csv')
+    er_df.to_csv(er_out_path, index=False)
+    print(f"Successfully saved {er_out_path}")
+    
     if not cma_df.empty and not mmf_df.empty and not er_df.empty:
         # Merge datasets
         merged = pd.merge(er_df, cma_df, on='observation_date', how='inner')
@@ -130,7 +135,7 @@ if __name__ == "__main__":
         
         merged.sort_values('observation_date', inplace=True)
         
-        out_path = os.path.join(base_dir, 'm2/KOR/merged_daily_liquid.csv')
+        out_path = os.path.join(base_dir, 'data/m2/KOR/merged_daily_liquid.csv')
         merged.to_csv(out_path, index=False)
         print(f"Succefully saved {out_path}")
         print(merged.head())

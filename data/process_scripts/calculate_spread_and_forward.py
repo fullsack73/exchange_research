@@ -4,9 +4,9 @@ import os
 # 파일 경로 설정
 base_path = '/Applications/dollar_price'
 file_paths = {
-    'exchange': os.path.join(base_path, 'exchange_rate/exchange_rate_processed.csv'),
-    'base_rate_kor': os.path.join(base_path, 'policy_rate/KOR/base_rate_KOR_processed.csv'),
-    'fed_funds': os.path.join(base_path, 'policy_rate/USA/FEDFUNDS.csv')
+    'exchange': os.path.join(base_path, 'data/exchange_rate/USD_KRW_processed.csv'),
+    'base_rate_kor': os.path.join(base_path, 'data/policy_rate/KOR/base_rate_KOR_processed.csv'),
+    'fed_funds': os.path.join(base_path, 'data/policy_rate/USA/FEDFUNDS.csv')
 }
 
 # 데이터 로드 함수
@@ -68,8 +68,8 @@ def process_data():
 
     # 4. 파일 저장
     # 저장 경로 설정
-    output_spread_path = os.path.join(base_path, 'policy_rate/spread_KOR_USA_processed.csv')
-    output_fwd_path = os.path.join(base_path, 'exchange_rate/theoretical_fwd_rate_processed.csv')
+    output_spread_path = os.path.join(base_path, 'data/policy_rate/spread_KOR_USA_processed.csv')
+    output_fwd_path = os.path.join(base_path, 'data/exchange_rate/theoretical_fwd_rate_processed.csv')
     
     # observation_date 컬럼을 포함하여 저장 (index=False로 저장하기 위해 데이터프레임 조작했음)
     # 하지만 더 깔끔하게 인덱스 리셋을 이용하는게 나을 수도 있음. 

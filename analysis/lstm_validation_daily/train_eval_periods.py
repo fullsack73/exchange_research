@@ -285,8 +285,8 @@ def run_experiment():
     df = df.sort_values("observation_date").reset_index(drop=True)
 
     periods = {
-        "full_2010_2025": ("2010-01-01", "2025-12-31"),
-        "anomaly_2024_11_to_2025_12": ("2024-11-01", "2025-12-31"),
+        "full_2010_2026": ("2010-01-01", "2026-03-16"),
+        "anomaly_2024_11_to_2026_03": ("2024-11-01", "2026-3-16"),
     }
 
     results = []
