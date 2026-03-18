@@ -219,12 +219,20 @@ def run_one_period(df_period: pd.DataFrame, period_name: str, out_dir: str, enab
     model_a.eval()
     model_b.eval()
     with torch.no_grad():
-        pred_a = model_a(torch.FloatTensor(x_a_test)).numpy()
-        pred_b = model_b(torch.FloatTensor(x_b_test)).numpy()
+        # Test-split predictions for evaluation metrics
+        pred_a_test = model_a(torch.FloatTensor(x_a_test)).numpy()
+        pred_b_test = model_b(torch.FloatTensor(x_b_test)).numpy()
+
+        # Full-range predictions for plotting (all available sequences in the period)
+        pred_a_full_scaled = model_a(torch.FloatTensor(x_a)).numpy()
+        pred_b_full_scaled = model_b(torch.FloatTensor(x_b)).numpy()
 
     actual = inverse_target(scaler_a, y_a_test, len(features_a))
-    pred_a_true = inverse_target(scaler_a, pred_a, len(features_a))
-    pred_b_true = inverse_target(scaler_b, pred_b, len(features_b))
+    pred_a_true = inverse_target(scaler_a, pred_a_test, len(features_a))
+    pred_b_true = inverse_target(scaler_b, pred_b_test, len(features_b))
+
+    pred_a_full_true = inverse_target(scaler_a, pred_a_full_scaled, len(features_a))
+    pred_b_full_true = inverse_target(scaler_b, pred_b_full_scaled, len(features_b))
 
     rmse_a = float(np.sqrt(mean_squared_error(actual, pred_a_true)))
     rmse_b = float(np.sqrt(mean_squared_error(actual, pred_b_true)))
@@ -237,27 +245,52 @@ def run_one_period(df_period: pd.DataFrame, period_name: str, out_dir: str, enab
     df_cf.loc[test_df.index, "MMF_total"] = last_train_mmf
     data_cf = scaler_b.transform(df_cf[features_b])
     x_cf, _ = create_sequences(data_cf, seq_length, pred_step)
-    x_cf_test = x_cf[train_seq_len:]
 
     with torch.no_grad():
-        pred_cf = model_b(torch.FloatTensor(x_cf_test)).numpy()
-    pred_cf_true = inverse_target(scaler_b, pred_cf, len(features_b))
+        pred_cf_full_scaled = model_b(torch.FloatTensor(x_cf)).numpy()
+    pred_cf_full_true = inverse_target(scaler_b, pred_cf_full_scaled, len(features_b))
 
-    dates = df_period["observation_date"].values
-    dates_test = dates[-len(actual):]
+    full_plot_dir = f"{out_dir}/full"
+    eval_plot_dir = f"{out_dir}/eval"
+    os.makedirs(full_plot_dir, exist_ok=True)
+    os.makedirs(eval_plot_dir, exist_ok=True)
 
+    dates_full = pd.to_datetime(df_period["observation_date"].values)
+    pred_start_idx = seq_length + pred_step - 1
+    dates_pred_full = dates_full[pred_start_idx:]
+    dates_pred_eval = dates_pred_full[train_seq_len:]
+    actual_full = df_period["USD_KRW"].values
+    actual_eval = actual
+    pred_cf_eval_true = pred_cf_full_true[train_seq_len:]
+
+    # Full-range figure: whole period actual + whole available-range predictions
     plt.figure(figsize=(12, 6))
-    plt.plot(pd.to_datetime(dates_test), actual, label="Actual USD/KRW", color="black", linewidth=2)
-    plt.plot(pd.to_datetime(dates_test), pred_a_true, label="Model A (Spread only)", color="orange", linestyle="--")
-    plt.plot(pd.to_datetime(dates_test), pred_b_true, label="Model B (Spread + MMF)", color="red")
-    plt.plot(pd.to_datetime(dates_test), pred_cf_true, label="Counterfactual (Flat MMF)", color="blue", linestyle=":")
-    plt.title(f"Daily LSTM Evaluation - {period_name}")
+    plt.plot(dates_full, actual_full, label="Actual USD/KRW", color="black", linewidth=2)
+    plt.plot(dates_pred_full, pred_a_full_true, label="Model A (Spread only)", color="orange", linestyle="--")
+    plt.plot(dates_pred_full, pred_b_full_true, label="Model B (Spread + MMF)", color="red")
+    plt.plot(dates_pred_full, pred_cf_full_true, label="Counterfactual (Flat MMF)", color="blue", linestyle=":")
+    plt.title(f"Daily LSTM Full-Range - {period_name}")
     plt.ylabel("USD / KRW")
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-    plot_path = f"{out_dir}/{period_name}_lstm_plot.png"
-    plt.savefig(plot_path)
+    plot_full_path = f"{full_plot_dir}/{period_name}_lstm_plot_full.png"
+    plt.savefig(plot_full_path)
+    plt.close()
+
+    # Eval figure: only test 20% range (original behavior)
+    plt.figure(figsize=(12, 6))
+    plt.plot(dates_pred_eval, actual_eval, label="Actual USD/KRW", color="black", linewidth=2)
+    plt.plot(dates_pred_eval, pred_a_true, label="Model A (Spread only)", color="orange", linestyle="--")
+    plt.plot(dates_pred_eval, pred_b_true, label="Model B (Spread + MMF)", color="red")
+    plt.plot(dates_pred_eval, pred_cf_eval_true, label="Counterfactual (Flat MMF)", color="blue", linestyle=":")
+    plt.title(f"Daily LSTM Evaluation (20% Test) - {period_name}")
+    plt.ylabel("USD / KRW")
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plot_eval_path = f"{eval_plot_dir}/{period_name}_lstm_plot_eval.png"
+    plt.savefig(plot_eval_path)
     plt.close()
 
     return {
@@ -272,7 +305,8 @@ def run_one_period(df_period: pd.DataFrame, period_name: str, out_dir: str, enab
         "better_model": "B" if rmse_b < rmse_a else "A",
         "best_params_a": best_a,
         "best_params_b": best_b,
-        "plot": plot_path,
+        "plot_full": plot_full_path,
+        "plot_eval": plot_eval_path,
     }
 
 
@@ -316,7 +350,8 @@ def run_experiment():
         lines.append(f"Better: Model {r['better_model']}")
         lines.append(f"Best Params A: {r['best_params_a']}")
         lines.append(f"Best Params B: {r['best_params_b']}")
-        lines.append(f"Plot: {r['plot']}")
+        lines.append(f"Plot Full: {r['plot_full']}")
+        lines.append(f"Plot Eval: {r['plot_eval']}")
         lines.append("")
 
     with open(f"{out_dir}/results.txt", "w", encoding="utf-8") as f:

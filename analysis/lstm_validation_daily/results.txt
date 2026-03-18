@@ -10,7 +10,8 @@ MAE B: 37.71
 Better: Model A
 Best Params A: {'hidden_dim': 32, 'num_layers': 1, 'lr': 0.001, 'num_epochs': 30, 'batch_size': 32, 'val_rmse_scaled': 0.8512961687405425}
 Best Params B: {'hidden_dim': 32, 'num_layers': 1, 'lr': 0.001, 'num_epochs': 30, 'batch_size': 32, 'val_rmse_scaled': 0.761701080496688}
-Plot: analysis/lstm_validation_daily/full_2010_2026_lstm_plot.png
+Plot Full: analysis/lstm_validation_daily/full/full_2010_2026_lstm_plot_full.png
+Plot Eval: analysis/lstm_validation_daily/eval/full_2010_2026_lstm_plot_eval.png
 
 [anomaly_2024_11_to_2026_03]
 Rows: 333 (train=266, test=67)
@@ -21,4 +22,5 @@ MAE B: 15.94
 Better: Model B
 Best Params A: {'hidden_dim': 32, 'num_layers': 1, 'lr': 0.001, 'num_epochs': 50, 'batch_size': 32, 'val_rmse_scaled': 0.3798363407351997}
 Best Params B: {'hidden_dim': 32, 'num_layers': 1, 'lr': 0.001, 'num_epochs': 50, 'batch_size': 32, 'val_rmse_scaled': 0.9882823953909674}
-Plot: analysis/lstm_validation_daily/anomaly_2024_11_to_2026_03_lstm_plot.png
+Plot Full: analysis/lstm_validation_daily/full/anomaly_2024_11_to_2026_03_lstm_plot_full.png
+Plot Eval: analysis/lstm_validation_daily/eval/anomaly_2024_11_to_2026_03_lstm_plot_eval.png

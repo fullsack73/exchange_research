@@ -25,7 +25,8 @@
       "batch_size": 32,
       "val_rmse_scaled": 0.761701080496688
     },
-    "plot": "analysis/lstm_validation_daily/full_2010_2026_lstm_plot.png"
+    "plot_full": "analysis/lstm_validation_daily/full/full_2010_2026_lstm_plot_full.png",
+    "plot_eval": "analysis/lstm_validation_daily/eval/full_2010_2026_lstm_plot_eval.png"
   },
   {
     "period": "anomaly_2024_11_to_2026_03",
@@ -53,6 +54,7 @@
       "batch_size": 32,
       "val_rmse_scaled": 0.9882823953909674
     },
-    "plot": "analysis/lstm_validation_daily/anomaly_2024_11_to_2026_03_lstm_plot.png"
+    "plot_full": "analysis/lstm_validation_daily/full/anomaly_2024_11_to_2026_03_lstm_plot_full.png",
+    "plot_eval": "analysis/lstm_validation_daily/eval/anomaly_2024_11_to_2026_03_lstm_plot_eval.png"
   }
 ]
