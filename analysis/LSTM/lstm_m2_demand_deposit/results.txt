@@ -1,0 +1,26 @@
+Daily LSTM Comparison by Period
+- Compare Model A (Spread only) vs Model B (Spread + Demand Deposit)
+
+[full_2015_2026]
+Rows: 2532 (train=2025, test=507)
+RMSE A: 43.98
+RMSE B: 29.54
+MAE A: 37.48
+MAE B: 25.20
+Better: Model B
+Best Params A: {'hidden_dim': 32, 'num_layers': 1, 'lr': 0.001, 'num_epochs': 30, 'batch_size': 32, 'val_rmse_scaled': 0.8512961687405425}
+Best Params B: {'hidden_dim': 32, 'num_layers': 1, 'lr': 0.001, 'num_epochs': 30, 'batch_size': 32, 'val_rmse_scaled': 0.8884324312664076}
+Plot Full: analysis/lstm_m2_demand_deposit/full/full_2015_2026_lstm_plot_full.png
+Plot Eval: analysis/lstm_m2_demand_deposit/eval/full_2015_2026_lstm_plot_eval.png
+
+[anomaly_2024_11_to_2026_03]
+Rows: 333 (train=266, test=67)
+RMSE A: 21.21
+RMSE B: 17.68
+MAE A: 18.13
+MAE B: 14.18
+Better: Model B
+Best Params A: {'hidden_dim': 32, 'num_layers': 1, 'lr': 0.001, 'num_epochs': 50, 'batch_size': 32, 'val_rmse_scaled': 0.3798363407351997}
+Best Params B: {'hidden_dim': 16, 'num_layers': 1, 'lr': 0.001, 'num_epochs': 50, 'batch_size': 32, 'val_rmse_scaled': 0.33676476963878876}
+Plot Full: analysis/lstm_m2_demand_deposit/full/anomaly_2024_11_to_2026_03_lstm_plot_full.png
+Plot Eval: analysis/lstm_m2_demand_deposit/eval/anomaly_2024_11_to_2026_03_lstm_plot_eval.png
