@@ -5,12 +5,20 @@ import shap
 import matplotlib.pyplot as plt
 import seaborn as sns
 import os
+from pathlib import Path
 
-# 디렉토리 생성
-os.makedirs('results', exist_ok=True)
+# 경로 설정 및 결과 디렉토리 생성
+SCRIPT_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = SCRIPT_DIR.parents[1]
+RESULTS_DIR = SCRIPT_DIR / 'results'
+RESULTS_DIR.mkdir(exist_ok=True)
 
 # 데이터 로드
-df = pd.read_csv('data/final_processed_data.csv', index_col=0, parse_dates=True)
+df = pd.read_csv(
+    PROJECT_ROOT / 'data' / 'CPI' / 'USA' / 'CPI_components' / 'final_processed_data.csv',
+    index_col=0,
+    parse_dates=True
+)
 
 # 피쳐와 타겟 분리
 # 타겟: FX_Ret (Regression) 또는 Is_Spike (Classification)
@@ -39,14 +47,14 @@ shap_values = explainer.shap_values(X)
 plt.figure(figsize=(12, 8))
 shap.summary_plot(shap_values, X, show=False)
 plt.title("SHAP Summary Plot - Impact on Exchange Rate Spikes")
-plt.savefig('results/shap_summary_plot.png', bbox_inches='tight')
+plt.savefig(RESULTS_DIR / 'shap_summary_plot.png', bbox_inches='tight')
 plt.close()
 
 # 시각화 2: Feature Importance (Mean Absolute SHAP)
 vals = np.abs(shap_values).mean(0)
 feature_importance = pd.DataFrame(list(zip(X.columns, vals)), columns=['feature', 'importance_val'])
 feature_importance.sort_values(by=['importance_val'], ascending=False, inplace=True)
-feature_importance.to_csv('results/feature_importance_ranking.csv', index=False)
+feature_importance.to_csv(RESULTS_DIR / 'feature_importance_ranking.csv', index=False)
 
 # 시각화 3: Dependence Plots for Core CPI and Shelter
 # 핵심 변수 필터링 (Core_YoY, Shelter_YoY 등)
@@ -58,7 +66,7 @@ for var in target_vars:
         plt.figure(figsize=(10, 6))
         shap.dependence_plot(lag_var, shap_values, X, show=False)
         plt.title(f"SHAP Dependence Plot: {lag_var}")
-        plt.savefig(f'results/dependence_{lag_var}.png', bbox_inches='tight')
+        plt.savefig(RESULTS_DIR / f'dependence_{lag_var}.png', bbox_inches='tight')
         plt.close()
 
 print("Modeling and SHAP analysis completed.")

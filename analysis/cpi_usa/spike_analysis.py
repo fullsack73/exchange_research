@@ -4,12 +4,21 @@ import xgboost as xgb
 import shap
 import matplotlib.pyplot as plt
 import os
+from pathlib import Path
 
-# 디렉토리 생성
-os.makedirs('results_spike', exist_ok=True)
+# 경로 설정 및 디렉토리 생성
+SCRIPT_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = SCRIPT_DIR.parents[1]
+RESULTS_DIR = SCRIPT_DIR / 'results'
+RESULTS_SPIKE_DIR = SCRIPT_DIR / 'results_spike'
+RESULTS_SPIKE_DIR.mkdir(exist_ok=True)
 
 # 데이터 로드
-df = pd.read_csv('data/final_processed_data.csv', index_col=0, parse_dates=True)
+df = pd.read_csv(
+    PROJECT_ROOT / 'data' / 'CPI' / 'USA' / 'CPI_components' / 'final_processed_data.csv',
+    index_col=0,
+    parse_dates=True
+)
 
 # 2024년 11월부터 2025년 12월까지 필터링
 spike_period_df = df.loc['2024-11-01':'2025-12-31']
@@ -39,19 +48,19 @@ shap_values = explainer.shap_values(X)
 plt.figure(figsize=(12, 8))
 shap.summary_plot(shap_values, X, show=False)
 plt.title("SHAP Summary Plot - Impact on FX Returns (Nov 2024 - Dec 2025)")
-plt.savefig('results_spike/shap_summary_spike_period.png', bbox_inches='tight')
+plt.savefig(RESULTS_SPIKE_DIR / 'shap_summary_spike_period.png', bbox_inches='tight')
 plt.close()
 
 # 시각화 2: Feature Importance
 vals = np.abs(shap_values).mean(0)
 feature_importance = pd.DataFrame(list(zip(X.columns, vals)), columns=['feature', 'importance_val'])
 feature_importance.sort_values(by=['importance_val'], ascending=False, inplace=True)
-feature_importance.to_csv('results_spike/feature_importance_spike_period.csv', index=False)
+feature_importance.to_csv(RESULTS_SPIKE_DIR / 'feature_importance_spike_period.csv', index=False)
 
 # 이벤트 스터디 필터링
-event_df = pd.read_csv('results/event_study_results.csv', parse_dates=['release_date'])
+event_df = pd.read_csv(RESULTS_DIR / 'event_study_results.csv', parse_dates=['release_date'])
 event_spike_period = event_df[(event_df['release_date'] >= '2024-11-01') & (event_df['release_date'] <= '2025-12-31')]
-event_spike_period.to_csv('results_spike/event_study_spike_period.csv', index=False)
+event_spike_period.to_csv(RESULTS_SPIKE_DIR / 'event_study_spike_period.csv', index=False)
 
 print("Deep analysis for spike period completed.")
 print("Results saved in results_spike/ directory.")

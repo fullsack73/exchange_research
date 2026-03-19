@@ -2,14 +2,32 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import os
+from pathlib import Path
+
+# 경로 설정
+SCRIPT_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = SCRIPT_DIR.parents[1]
+RESULTS_DIR = SCRIPT_DIR / 'results'
+RESULTS_DIR.mkdir(exist_ok=True)
 
 # 데이터 로드
-fx_daily = pd.read_csv('data/krwusd_daily.csv', index_col=0, parse_dates=True)
-release_dates = pd.read_csv('data/cpi_release_dates.csv', parse_dates=['release_date'])
-cpi_monthly = pd.read_csv('data/us_cpi_monthly.csv', index_col=0, parse_dates=True)
+fx_daily = pd.read_csv(
+    PROJECT_ROOT / 'data' / 'exchange_rate' / 'USD_KRW_processed.csv',
+    parse_dates=['observation_date']
+)
+fx_daily = fx_daily.set_index('observation_date').sort_index()
+release_dates = pd.read_csv(
+    PROJECT_ROOT / 'data' / 'CPI' / 'USA' / 'CPI_components' / 'cpi_release_dates.csv',
+    parse_dates=['release_date']
+)
+cpi_monthly = pd.read_csv(
+    PROJECT_ROOT / 'data' / 'CPI' / 'USA' / 'CPI_components' / 'us_cpi_monthly.csv',
+    index_col=0,
+    parse_dates=True
+)
 
 # 일별 수익률 계산
-fx_daily['Return'] = fx_daily['KRWUSD'].pct_change()
+fx_daily['Return'] = fx_daily['USD_KRW'].pct_change()
 
 # 이벤트 분석 결과 저장할 리스트
 event_results = []
@@ -21,7 +39,6 @@ for idx, row in release_dates.iterrows():
     # 발표일 환율 반응 (당일 수익률)
     if r_date in fx_daily.index:
         fx_reaction = fx_daily.loc[r_date, 'Return']
-        fx_price = fx_daily.loc[r_date, 'KRWUSD']
         
         # 이전 5일 평균 변동성 대비 당일 변동성 비교를 위해
         prev_5d = fx_daily.loc[:r_date].iloc[-6:-1]
@@ -43,7 +60,7 @@ for idx, row in release_dates.iterrows():
             })
 
 event_df = pd.DataFrame(event_results)
-event_df.to_csv('results/event_study_results.csv', index=False)
+event_df.to_csv(RESULTS_DIR / 'event_study_results.csv', index=False)
 
 # 시각화: Core MoM vs FX Reaction
 plt.figure(figsize=(10, 6))
@@ -53,7 +70,7 @@ plt.axvline(0, color='black', linestyle='--', linewidth=0.5)
 plt.title("US Core CPI MoM vs KRW/USD Reaction on Release Day")
 plt.xlabel("Core CPI MoM")
 plt.ylabel("KRW/USD Daily Return")
-plt.savefig('results/event_study_scatter.png', bbox_inches='tight')
+plt.savefig(RESULTS_DIR / 'event_study_scatter.png', bbox_inches='tight')
 plt.close()
 
 print("Event study completed.")
