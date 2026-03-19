@@ -1,98 +1,98 @@
-# LSTM CPI Integration Analysis Results
+# LSTM CPI 통합 분석 결과
 
-## Analysis Objective
-Test whether incorporating CPI components (via top-5 SHAP-selected features) improves FX prediction accuracy when combined with existing Spread + MMF model. This addresses the hypothesis that CPI interaction effects may explain the KRW/USD anomalous spike (2024-11 ~ 2025-12).
+## 분석 목적
+기존 Spread + MMF 모델에 CPI 구성 항목(상위 5개 SHAP 중요 변수)을 추가했을 때 환율(FX) 예측 정확도가 개선되는지 검증한다. 이를 통해 CPI 상호작용 효과가 KRW/USD 이상 급등 구간(2024-11 ~ 2025-12)을 설명할 수 있는지 확인한다.
 
-## Methodology
+## 분석 방법
 
-### Data Integration
-- **Base Daily Data**: USD_KRW_processed.csv (2532 business days)
-- **CPI Components**: Monthly US CPI subcomponents with 82 lag features
-- **Top-5 CPI Features** (selected by SHAP importance from full-period analysis):
+### 데이터 통합
+- **기본 일별 데이터**: USD_KRW_processed.csv (영업일 2532개)
+- **CPI 구성 항목**: 미국 월별 CPI 세부 항목 + 82개 시차(lag) 피처
+- **상위 5개 CPI 피처** (전기간 SHAP 중요도 기준 선택):
   1. Energy_YoY_lag2 (SHAP: 0.428)
   2. Food_YoY (SHAP: 0.341)
   3. Shelter_YoY_lag2 (SHAP: 0.341)
   4. Durables_YoY_lag3 (SHAP: 0.248)
   5. Headline_MoM_lag1 (SHAP: 0.162)
-- **Interpolation**: Monthly CPI → daily via linear interpolation + forward/backward fill
+- **보간 방식**: 월별 CPI를 일별로 선형 보간 + 전/후방 결측치 채움
 
-### Model Architectures
-- **Model A (Baseline)**: Spread only
-- **Model B (w/ Liquidity)**: Spread + MMF_total
-- **Model C (CPI Integration)**: Spread + MMF_total + Top-5 CPI features
-- **LSTM Config**: seq_length=30 days, pred_step=5 days, hyperparameter-tuned
+### 모델 구조
+- **Model A (기준 모델)**: Spread only
+- **Model B (유동성 포함)**: Spread + MMF_total
+- **Model C (CPI 통합)**: Spread + MMF_total + 상위 5개 CPI 피처
+- **LSTM 설정**: seq_length=30일, pred_step=5일, 하이퍼파라미터 튜닝 적용
 
-### Evaluation Periods
-- **Full Period**: All available data (80/20 train/test)
-- **Anomaly Period**: 2024-11-01 ~ 2025-12-31 only (14 months, 80/20 train/test)
+### 평가 구간
+- **전체 구간**: 가용 데이터 전체 (학습/테스트 = 80/20)
+- **이상 구간**: 2024-11-01 ~ 2025-12-31 (14개월, 학습/테스트 = 80/20)
 
-## Results
+## 결과
 
-### Full Period (2025 train, 507 test)
+### 전체 구간 (학습 2025개, 테스트 507개)
 
-| Model | Hidden Dim | Num Layers | Epochs | RMSE | MAE | Status |
+| 모델 | Hidden Dim | Num Layers | Epochs | RMSE | MAE | 상태 |
 |-------|-----------|-----------|--------|------|-----|--------|
-| A: Spread | 32 | 1 | 30 | **0.1336** | **0.0965** | ✅ Best |
-| C: Spread+MMF+CPI | 32 | 1 | 30 | 0.1579 | 0.1346 | Mixed |
-| B: Spread+MMF | 32 | 1 | 30 | 0.2281 | 0.2027 | ❌ Worst |
+| A: Spread | 32 | 1 | 30 | **0.1336** | **0.0965** | ✅ 최고 |
+| C: Spread+MMF+CPI | 32 | 1 | 30 | 0.1579 | 0.1346 | 보통 |
+| B: Spread+MMF | 32 | 1 | 30 | 0.2281 | 0.2027 | ❌ 최하 |
 
-**Inference**: Adding MMF + CPI features degrades performance on full dataset. Simple Spread-only model captures exchange rate dynamics most efficiently.
+**해석**: MMF와 CPI 피처를 추가하면 전기간 성능이 오히려 저하된다. 단순한 Spread-only 모델이 환율 동학을 가장 효율적으로 포착한다.
 
-### Anomaly Period (2024-11~2025-12, 228 train, 57 test)
+### 이상 구간 (2024-11~2025-12, 학습 228개, 테스트 57개)
 
-| Model | Hidden Dim | Num Layers | Epochs | RMSE | MAE | Status |
+| 모델 | Hidden Dim | Num Layers | Epochs | RMSE | MAE | 상태 |
 |-------|-----------|-----------|--------|------|-----|--------|
-| A: Spread | 32 | 1 | 50 | **0.1589** | **0.1203** | ✅ Best |
-| B: Spread+MMF | 32 | 1 | 50 | 0.3358 | 0.3155 | ❌ Poor |
-| C: Spread+MMF+CPI | 16 | 1 | 90 | 0.3690 | 0.3496 | ❌ Worst |
+| A: Spread | 32 | 1 | 50 | **0.1589** | **0.1203** | ✅ 최고 |
+| B: Spread+MMF | 32 | 1 | 50 | 0.3358 | 0.3155 | ❌ 낮음 |
+| C: Spread+MMF+CPI | 16 | 1 | 90 | 0.3690 | 0.3496 | ❌ 최하 |
 
-**Key Insight**: During anomaly period, Spread model still outperforms despite regime shift. The 2024-11~2025-12 spike cannot be explained by MMF or CPI dynamics in lagged form. Model C required more intensive training (epochs 90 vs 50) yet achieved worst results, suggesting overfitting on noisy feature interactions.
+**핵심 인사이트**: 체제(regime) 변화가 있는 이상 구간에서도 Spread 모델이 더 우수했다. 2024-11~2025-12 급등은 MMF 또는 CPI의 시차 정보만으로 설명되지 않는다. Model C는 더 긴 학습(90 epochs)을 사용했음에도 성능이 가장 낮아, 잡음성 상호작용에 대한 과적합 가능성을 시사한다.
 
-## Model Comparison Summary
+## 모델 비교 요약
 
-### Performance by Dataset
+### 구간별 성능
 ```
-Full Period:     Model A > Model C > Model B  (0.1336 > 0.1579 > 0.2281)
-Anomaly Period:  Model A > Model B > Model C  (0.1589 > 0.3358 > 0.3690)
+전체 구간:     Model A > Model C > Model B  (0.1336 > 0.1579 > 0.2281)
+이상 구간:     Model A > Model B > Model C  (0.1589 > 0.3358 > 0.3690)
 ```
 
-### Feature Contribution Analysis
-- **Spread**: Sufficient to capture exchange rate dynamics across both time periods
-- **MMF**: Adds prediction noise rather than signal (RMSE increases ~1.7x in full period)
-- **CPI**: Top-5 lagged features fail to improve predictions (0.8% worse than Baseline A in full period, 18% worse in anomaly period)
+### 피처 기여 해석
+- **Spread**: 두 구간 모두에서 환율 변동을 설명하는 데 충분함
+- **MMF**: 신호보다 잡음을 더 추가함 (전기간 RMSE 약 1.7배 악화)
+- **CPI**: 상위 5개 lag 피처를 추가해도 예측 개선 실패 (전기간 기준 Model A 대비 0.8% 악화, 이상구간 18% 악화)
 
-## Implications for Anomaly Hypothesis
+## 이상 구간 가설에 대한 시사점
 
-### Previous Finding (Baseline LSTM Validation)
-[analysis/lstm_validation_daily/result.md](../lstm_validation_daily/result.md) established that:
-- Spread alone achieves RMSE 0.133 on full dataset
-- MMF improved prediction in some configurations
+### 기존 결과 (기준 LSTM 검증)
+[analysis/lstm_validation_daily/result.md](../lstm_validation_daily/result.md)에서는 다음을 확인했다:
+- Spread 단독으로 전기간 RMSE 0.133 달성
+- 일부 설정에서 MMF가 성능 개선
 
-### Current CPI Integration Results
-- **CPI does NOT improve Model C**: Despite selecting top-5 SHAP-important features, CPI lags contribute noise
-- **MMF benefit disappeared**: Earlier SHAP analysis suggested MMF contribution, but end-to-end LSTM training shows degradation
-- **Regime-specific behavior**: Anomaly period model sensitivity differs from full-period, but adding features doesn't resolve it
+### 이번 CPI 통합 결과
+- **CPI는 Model C를 개선하지 못함**: SHAP 상위 피처를 사용해도 CPI lag는 잡음만 증가
+- **MMF 효과 소실**: 기존 SHAP 해석과 달리 end-to-end LSTM 학습에서는 성능 저하로 나타남
+- **구간별 민감도 차이 존재**: 이상 구간에서 모델 민감도는 다르지만, 피처 추가로 해결되지는 않음
 
-### Conclusion
-The 2024-11~2025-12 KRW/USD spike **cannot be explained by** lagged realizations of:
-- Interest rate differentials (captured by Spread)
-- Liquidity flows (MMF)
-- US price pressures (CPI components)
+### 결론
+2024-11~2025-12 KRW/USD 급등은 아래의 지연된 실물 지표만으로는 **설명하기 어렵다**:
+- 금리차(Spread로 반영)
+- 유동성 흐름(MMF)
+- 미국 물가 압력(CPI 구성 항목)
 
-This suggests anomaly drivers may be:
-1. **Forward-looking expectations** (not lagged realizations) of economic divergence
-2. **Non-linear FX regime change** (requires different model architecture)
-3. **Exogenous event shocks** (geopolitical, policy surprises) not captured by economic indicators
-4. **Lead-lag timing mismatch**: CPI/MMF movements may follow FX changes, not precede them
+이는 이상 구간의 주요 동인이 다음과 같을 가능성을 시사한다:
+1. 경제 펀더멘털의 지연값이 아닌 **선행 기대(Forward-looking expectations)**
+2. **비선형 환율 체제 전환**(다른 모델 구조 필요)
+3. 경제지표로 포착되지 않는 **외생 충격**(지정학, 정책 서프라이즈)
+4. **시차 정렬 문제**: CPI/MMF가 환율을 선행하기보다 후행할 가능성
 
-## Recommendations
+## 권고 사항
 
-1. **Model Architecture**: Consider attention-based or regime-switching LSTM rather than simple stacking
-2. **Feature Engineering**: Test leading indicators (forward-looking measures) instead of lagged realization
-3. **Event Analysis**: Combine LSTM with event study to identify specific policy/crisis dates driving anomaly
-4. **Causality Testing**: Granger causality test (CPI → FX vs FX → CPI) to determine lead/lag relationship
+1. **모델 구조**: 단순 스택 LSTM 대신 Attention 기반 또는 Regime-switching 모델 검토
+2. **피처 엔지니어링**: 후행 실측치보다 선행 지표(기대 지표) 중심으로 재구성
+3. **이벤트 분석 결합**: 이벤트 스터디와 LSTM을 결합해 이상 구간의 핵심 날짜/충격 식별
+4. **인과성 검증**: Granger causality (CPI → FX vs FX → CPI)로 선후관계 확인
 
-## Output Files
-- `daily_dataset_cpi_integrated.csv`: Merged daily data (2532 rows, 9 columns)
-- `results.json`: Raw model performance metrics for all 6 configurations
-- `result.md`: This analysis summary
+## 출력 파일
+- `daily_dataset_cpi_integrated.csv`: 일별 통합 데이터 (2532행, 9열)
+- `results.json`: 6개 구성(구간 x 모델) 원시 성능 결과
+- `result.md`: 본 분석 요약
