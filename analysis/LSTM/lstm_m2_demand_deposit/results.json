@@ -1,21 +1,21 @@
 [
   {
-    "period": "full_2015_2026",
-    "rows": 2532,
-    "train_rows": 2025,
-    "test_rows": 507,
-    "rmse_model_a": 43.97563897584375,
-    "rmse_model_b": 29.544975183025045,
-    "mae_model_a": 37.4797573002817,
-    "mae_model_b": 25.20029687320364,
-    "better_model": "B",
+    "period": "full_2010_12_to_2026_03",
+    "rows": 3774,
+    "train_rows": 3019,
+    "test_rows": 755,
+    "rmse_model_a": 44.622917502696794,
+    "rmse_model_b": 63.996730610585054,
+    "mae_model_a": 40.97703928117256,
+    "mae_model_b": 59.975957996878755,
+    "better_model": "A",
     "best_params_a": {
       "hidden_dim": 32,
       "num_layers": 1,
       "lr": 0.001,
       "num_epochs": 30,
       "batch_size": 32,
-      "val_rmse_scaled": 0.8512961687405425
+      "val_rmse_scaled": 0.7407068185179434
     },
     "best_params_b": {
       "hidden_dim": 32,
@@ -23,20 +23,20 @@
       "lr": 0.001,
       "num_epochs": 30,
       "batch_size": 32,
-      "val_rmse_scaled": 0.8884324312664076
+      "val_rmse_scaled": 0.8526479754627962
     },
-    "plot_full": "analysis/lstm_m2_demand_deposit/full/full_2015_2026_lstm_plot_full.png",
-    "plot_eval": "analysis/lstm_m2_demand_deposit/eval/full_2015_2026_lstm_plot_eval.png"
+    "plot_full": "analysis/LSTM/lstm_m2_demand_deposit/full/full_2010_12_to_2026_03_lstm_plot_full.png",
+    "plot_eval": "analysis/LSTM/lstm_m2_demand_deposit/eval/full_2010_12_to_2026_03_lstm_plot_eval.png"
   },
   {
     "period": "anomaly_2024_11_to_2026_03",
     "rows": 333,
     "train_rows": 266,
     "test_rows": 67,
-    "rmse_model_a": 21.21443668093419,
-    "rmse_model_b": 17.684513644912695,
-    "mae_model_a": 18.128903790181248,
-    "mae_model_b": 14.17832641373965,
+    "rmse_model_a": 21.21443617766096,
+    "rmse_model_b": 18.980171198585715,
+    "mae_model_a": 18.128903264133797,
+    "mae_model_b": 14.44613498601825,
     "better_model": "B",
     "best_params_a": {
       "hidden_dim": 32,
@@ -44,7 +44,7 @@
       "lr": 0.001,
       "num_epochs": 50,
       "batch_size": 32,
-      "val_rmse_scaled": 0.3798363407351997
+      "val_rmse_scaled": 0.37983633869897687
     },
     "best_params_b": {
       "hidden_dim": 16,
@@ -52,9 +52,9 @@
       "lr": 0.001,
       "num_epochs": 50,
       "batch_size": 32,
-      "val_rmse_scaled": 0.33676476963878876
+      "val_rmse_scaled": 1.0722731148401623
     },
-    "plot_full": "analysis/lstm_m2_demand_deposit/full/anomaly_2024_11_to_2026_03_lstm_plot_full.png",
-    "plot_eval": "analysis/lstm_m2_demand_deposit/eval/anomaly_2024_11_to_2026_03_lstm_plot_eval.png"
+    "plot_full": "analysis/LSTM/lstm_m2_demand_deposit/full/anomaly_2024_11_to_2026_03_lstm_plot_full.png",
+    "plot_eval": "analysis/LSTM/lstm_m2_demand_deposit/eval/anomaly_2024_11_to_2026_03_lstm_plot_eval.png"
   }
 ]

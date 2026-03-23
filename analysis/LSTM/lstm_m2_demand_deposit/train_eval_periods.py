@@ -306,7 +306,7 @@ def run_one_period(df_period: pd.DataFrame, period_name: str, out_dir: str, enab
 
 
 def run_experiment():
-    out_dir = "analysis/lstm_m2_demand_deposit"
+    out_dir = "analysis/LSTM/lstm_m2_demand_deposit"
     os.makedirs(out_dir, exist_ok=True)
 
     df = pd.read_csv(f"{out_dir}/daily_dataset_m2_demand_deposit.csv")
@@ -314,7 +314,7 @@ def run_experiment():
     df = df.sort_values("observation_date").reset_index(drop=True)
 
     periods = {
-        "full_2015_2026": ("2015-12-01", "2026-03-16"),
+        "full_2010_12_to_2026_03": ("2010-12-01", "2026-03-16"),
         "anomaly_2024_11_to_2026_03": ("2024-11-01", "2026-03-16"),
     }
 

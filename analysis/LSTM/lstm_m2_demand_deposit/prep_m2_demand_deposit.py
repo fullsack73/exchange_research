@@ -3,12 +3,30 @@ import pandas as pd
 
 
 def prep_m2_demand_deposit_data() -> None:
-    out_dir = "analysis/lstm_m2_demand_deposit"
+    out_dir = "analysis/LSTM/lstm_m2_demand_deposit"
     os.makedirs(out_dir, exist_ok=True)
 
-    # Base daily data with USD_KRW and spread (already daily-aligned)
-    daily_base = pd.read_csv("analysis/lstm_validation_daily/daily_dataset.csv")
-    daily_base["observation_date"] = pd.to_datetime(daily_base["observation_date"])
+    # Build daily base from raw exchange-rate and spread sources so the range can start in 2010.
+    usd = pd.read_csv("data/exchange_rate/USD_KRW_processed.csv")
+    usd["observation_date"] = pd.to_datetime(usd["observation_date"])
+    usd = usd[["observation_date", "USD_KRW"]].sort_values("observation_date").reset_index(drop=True)
+
+    spread_df = pd.read_csv("data/policy_rate/spread_KOR_USA_processed.csv")
+    spread_df["observation_date"] = pd.to_datetime(spread_df["observation_date"])
+    spread_df = spread_df[["observation_date", "RATE_SPREAD_KOR_USA"]]
+
+    daily_base = pd.merge(usd, spread_df, on="observation_date", how="left")
+    daily_base["RATE_SPREAD_KOR_USA"] = (
+        daily_base["RATE_SPREAD_KOR_USA"].interpolate(method="linear").ffill().bfill()
+    )
+
+    start_date = pd.Timestamp("2010-12-01")
+    end_date = pd.Timestamp("2026-03-16")
+    daily_base = daily_base[
+        (daily_base["observation_date"] >= start_date)
+        & (daily_base["observation_date"] <= end_date)
+    ].copy()
+    daily_base = daily_base.sort_values("observation_date").reset_index(drop=True)
 
     # Monthly M2 details
     m2_details = pd.read_csv("data/m2/KOR/M2_details_processed.csv")
@@ -22,14 +40,8 @@ def prep_m2_demand_deposit_data() -> None:
     m2_subset = m2_details[["observation_date", target_col]].copy()
     m2_subset = m2_subset.sort_values("observation_date").reset_index(drop=True)
 
-    # Interpolate monthly value to daily frequency
-    date_range = pd.date_range(
-        start=daily_base["observation_date"].min(),
-        end=daily_base["observation_date"].max(),
-        freq="D",
-    )
-
-    m2_daily = m2_subset.set_index("observation_date").reindex(date_range)
+    # Interpolate monthly value onto the base daily dates.
+    m2_daily = m2_subset.set_index("observation_date").reindex(daily_base["observation_date"])
     m2_daily = m2_daily.interpolate(method="linear", limit_direction="both")
     m2_daily = m2_daily.reset_index().rename(columns={"index": "observation_date"})
 
