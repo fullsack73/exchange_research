@@ -3,7 +3,7 @@ import pandas as pd
 
 
 def prep_daily_data() -> None:
-    out_dir = "analysis/lstm_validation_daily"
+    out_dir = "analysis/LSTM/lstm_mmf"
     os.makedirs(out_dir, exist_ok=True)
 
     # Core daily liquidity dataset (already aligned to business days)

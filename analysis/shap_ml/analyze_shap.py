@@ -7,6 +7,8 @@ from sklearn.ensemble import RandomForestRegressor
 from functools import reduce
 from matplotlib import font_manager, rc
 import platform
+import json
+from pathlib import Path
 
 # 운영체제에 따른 한글 폰트 설정
 if platform.system() == 'Darwin': # Mac 환경
@@ -18,16 +20,16 @@ plt.rcParams['axes.unicode_minus'] = False
 def load_data():
     base_path = '/Applications/dollar_price'
     files = {
-        'USD_KRW': 'exchange_rate/exchange_rate_processed.csv',
-        'SPREAD_POLICY': 'policy_rate/spread_KOR_USA_processed.csv',
-        'BOND_KOR': '10y_bond/KOR/10y_bond_KOR_processed.csv',
-        'BOND_USA': '10y_bond/USA/GS10.csv',
-        'M2_KOR': 'm2/KOR/M2_KOR_processed.csv',
-        'M2_USA': 'm2/USA/M2SL.csv',
-        'CPI_KOR': 'CPI/KOR/CPI_KOR_processed.csv',
-        'CPI_USA': 'CPI/USA/CPIAUCSL.csv',
-        'IPI_KOR': 'production_index/KOR/IPI_KOR_processed.csv',
-        'IPI_USA': 'production_index/USA/INDPRO.csv'
+        'USD_KRW': 'data/exchange_rate/exchange_rate_processed.csv',
+        'SPREAD_POLICY': 'data/policy_rate/spread_KOR_USA_processed.csv',
+        'BOND_KOR': 'data/10y_bond/KOR/10y_bond_KOR_processed.csv',
+        'BOND_USA': 'data/10y_bond/USA/GS10.csv',
+        'M2_KOR': 'data/m2/KOR/M2_KOR_processed.csv',
+        'M2_USA': 'data/m2/USA/M2SL.csv',
+        'CPI_KOR': 'data/CPI/KOR/CPI_KOR_processed.csv',
+        'CPI_USA': 'data/CPI/USA/CPIAUCSL.csv',
+        'IPI_KOR': 'data/production_index/KOR/IPI_KOR_processed.csv',
+        'IPI_USA': 'data/production_index/USA/INDPRO.csv'
     }
 
     dfs = []
@@ -36,11 +38,10 @@ def load_data():
             full_path = f"{base_path}/{path}"
             df = pd.read_csv(full_path)
             
-            # 날짜 컬럼 형식 통일
-            if 'observation_date' in df.columns:
-                df['observation_date'] = pd.to_datetime(df['observation_date'])
+            if 'observation_date' not in df.columns:
+                continue
+            df['observation_date'] = pd.to_datetime(df['observation_date'])
             
-            # 값 컬럼 이름 변경 (날짜 제외)
             val_col = [c for c in df.columns if c != 'observation_date'][0]
             df = df.rename(columns={val_col: name})
             
@@ -66,11 +67,15 @@ def analyze_shap_drivers(df):
         'IPI_KOR', 'IPI_USA'
     ]
     
-    # 1. 모델 학습: Normal 기간 데이터만 사용 (~2024.10)
-    cutoff_date = pd.Timestamp('2024-11-01')
+    period_path = Path('/Applications/dollar_price/analysis/anomaly/dynamic_periods.json')
+    with open(period_path, 'r', encoding='utf-8') as f:
+        period_info = json.load(f)
+
+    cutoff_date = pd.to_datetime(period_info['primary_anomaly_period']['start'])
+    anomaly_end = pd.to_datetime(period_info['primary_anomaly_period']['end'])
     
     df_train = df[df['observation_date'] < cutoff_date].dropna()
-    df_test = df[df['observation_date'] >= cutoff_date].dropna() # Anomaly Period
+    df_test = df[(df['observation_date'] >= cutoff_date) & (df['observation_date'] <= anomaly_end)].dropna()
     
     print(f"\n[데이터셋]")
     print(f"학습용(Train): ~ {df_train['observation_date'].max().date()} (n={len(df_train)})")
@@ -95,7 +100,7 @@ def analyze_shap_drivers(df):
     sns.barplot(x='Importance', y='Feature', data=rf_importances, hue='Feature', palette='viridis', legend=False)
     for i, row in enumerate(rf_importances.itertuples()):
         plt.text(row.Importance, i, f' {row.Importance:.3f}', va='center')
-    plt.title(f'Random Forest Feature Importance (Anomaly Period: {df_test["observation_date"].min().date()} ~)')
+    plt.title(f'Random Forest Feature Importance (Anomaly Period: {df_test["observation_date"].min().date()} ~ {df_test["observation_date"].max().date()})')
     plt.xlabel('Importance')
     plt.ylabel('')
     plt.tight_layout()
@@ -112,7 +117,7 @@ def analyze_shap_drivers(df):
     # Summary Plot
     plt.figure()
     shap.summary_plot(shap_values, X_test, feature_names=feature_cols, show=False)
-    plt.title(f"SHAP Summary Plot (Anomaly Period: {df_test['observation_date'].min().date()} ~ )")
+    plt.title(f"SHAP Summary Plot (Anomaly Period: {df_test['observation_date'].min().date()} ~ {df_test['observation_date'].max().date()})")
     plt.tight_layout()
     plt.savefig('shap_summary_anomaly.png')
     print(f"\n[알림] SHAP Summary Plot이 'shap_summary_anomaly.png'로 저장되었습니다.")

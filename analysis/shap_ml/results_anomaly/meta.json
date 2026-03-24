@@ -1,0 +1,6 @@
+{
+  "period": "anomaly",
+  "rows": 3588,
+  "train_rows": 2870,
+  "test_rows": 718
+}

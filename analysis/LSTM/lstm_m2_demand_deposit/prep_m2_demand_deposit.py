@@ -20,12 +20,6 @@ def prep_m2_demand_deposit_data() -> None:
         daily_base["RATE_SPREAD_KOR_USA"].interpolate(method="linear").ffill().bfill()
     )
 
-    start_date = pd.Timestamp("2010-12-01")
-    end_date = pd.Timestamp("2026-03-16")
-    daily_base = daily_base[
-        (daily_base["observation_date"] >= start_date)
-        & (daily_base["observation_date"] <= end_date)
-    ].copy()
     daily_base = daily_base.sort_values("observation_date").reset_index(drop=True)
 
     # Monthly M2 details

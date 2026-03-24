@@ -6,6 +6,8 @@ from sklearn.ensemble import RandomForestRegressor
 from functools import reduce
 from matplotlib import font_manager, rc
 import platform
+import json
+from pathlib import Path
 
 # 운영체제에 따른 한글 폰트 설정
 if platform.system() == 'Darwin': # Mac 환경
@@ -17,16 +19,16 @@ plt.rcParams['axes.unicode_minus'] = False
 def load_data():
     base_path = '/Applications/dollar_price'
     files = {
-        'USD_KRW': 'exchange_rate/exchange_rate_processed.csv',
-        'SPREAD_POLICY': 'policy_rate/spread_KOR_USA_processed.csv',
-        'BOND_KOR': '10y_bond/KOR/10y_bond_KOR_processed.csv',
-        'BOND_USA': '10y_bond/USA/GS10.csv',
-        'M2_KOR': 'm2/KOR/M2_KOR_processed.csv',
-        'M2_USA': 'm2/USA/M2SL.csv',
-        'CPI_KOR': 'CPI/KOR/CPI_KOR_processed.csv',
-        'CPI_USA': 'CPI/USA/CPIAUCSL.csv',
-        'IPI_KOR': 'production_index/KOR/IPI_KOR_processed.csv',
-        'IPI_USA': 'production_index/USA/INDPRO.csv'
+        'USD_KRW': 'data/exchange_rate/exchange_rate_processed.csv',
+        'SPREAD_POLICY': 'data/policy_rate/spread_KOR_USA_processed.csv',
+        'BOND_KOR': 'data/10y_bond/KOR/10y_bond_KOR_processed.csv',
+        'BOND_USA': 'data/10y_bond/USA/GS10.csv',
+        'M2_KOR': 'data/m2/KOR/M2_KOR_processed.csv',
+        'M2_USA': 'data/m2/USA/M2SL.csv',
+        'CPI_KOR': 'data/CPI/KOR/CPI_KOR_processed.csv',
+        'CPI_USA': 'data/CPI/USA/CPIAUCSL.csv',
+        'IPI_KOR': 'data/production_index/KOR/IPI_KOR_processed.csv',
+        'IPI_USA': 'data/production_index/USA/INDPRO.csv'
     }
 
     dfs = []
@@ -35,11 +37,10 @@ def load_data():
             full_path = f"{base_path}/{path}"
             df = pd.read_csv(full_path)
             
-            # 날짜 컬럼 형식 통일
-            if 'observation_date' in df.columns:
-                df['observation_date'] = pd.to_datetime(df['observation_date'])
+            if 'observation_date' not in df.columns:
+                continue
+            df['observation_date'] = pd.to_datetime(df['observation_date'])
             
-            # 값 컬럼 이름 변경 (날짜 제외)
             val_col = [c for c in df.columns if c != 'observation_date'][0]
             df = df.rename(columns={val_col: name})
             
@@ -65,11 +66,12 @@ def analyze_correlation_change(df):
     ]
     target_col = 'USD_KRW'
     
-    # 구간 분리
-    # Normal: ~ 2024-10-31
-    # Anomaly: 2024-11-01 ~ 2026-01-31
-    cutoff_start = pd.Timestamp('2024-11-01')
-    cutoff_end_excl = pd.Timestamp('2026-02-01')
+    period_path = Path('/Applications/dollar_price/analysis/anomaly/dynamic_periods.json')
+    with open(period_path, 'r', encoding='utf-8') as f:
+        period_info = json.load(f)
+
+    cutoff_start = pd.to_datetime(period_info['primary_anomaly_period']['start'])
+    cutoff_end_excl = pd.to_datetime(period_info['primary_anomaly_period']['end']) + pd.Timedelta(days=1)
     
     df_normal = df[df['observation_date'] < cutoff_start]
     df_anomaly = df[(df['observation_date'] >= cutoff_start) & (df['observation_date'] < cutoff_end_excl)]
@@ -86,10 +88,10 @@ def analyze_correlation_change(df):
     fig, axes = plt.subplots(1, 2, figsize=(16, 8), sharey=True)
     
     sns.heatmap(corr_normal, annot=True, fmt='.2f', cmap='RdBu_r', center=0, vmin=-1, vmax=1, ax=axes[0])
-    axes[0].set_title('Normal Period Correlation (~24.10)')
+    axes[0].set_title('Normal Period Correlation')
     
     sns.heatmap(corr_anomaly, annot=True, fmt='.2f', cmap='RdBu_r', center=0, vmin=-1, vmax=1, ax=axes[1])
-    axes[1].set_title('Anomaly Period Correlation (24.11~26.01)')
+    axes[1].set_title('Anomaly Period Correlation (Dynamic)')
     
     plt.tight_layout()
     plt.savefig('correlation_comparison.png')
@@ -98,7 +100,7 @@ def analyze_correlation_change(df):
     # 이상 기간(Anomaly Period) 단독 히트맵 저장
     plt.figure(figsize=(10, 8))
     sns.heatmap(corr_anomaly, annot=True, fmt='.2f', cmap='RdBu_r', center=0, vmin=-1, vmax=1)
-    plt.title('Anomaly Period Correlation (24.11~26.01)')
+    plt.title('Anomaly Period Correlation (Dynamic)')
     plt.tight_layout()
     plt.savefig('correlation_anomaly_only.png')
     print(f"\n[알림] 이상 기간 단독 히트맵이 'correlation_anomaly_only.png'로 저장되었습니다.")

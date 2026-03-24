@@ -313,9 +313,21 @@ def run_experiment():
     df["observation_date"] = pd.to_datetime(df["observation_date"])
     df = df.sort_values("observation_date").reset_index(drop=True)
 
+    with open("analysis/anomaly/dynamic_periods.json", "r", encoding="utf-8") as f:
+        period_info = json.load(f)
+
+    anomaly_start = pd.to_datetime(period_info["primary_anomaly_period"]["start"])
+    anomaly_end = pd.to_datetime(period_info["primary_anomaly_period"]["end"])
+
     periods = {
-        "full_2010_12_to_2026_03": ("2010-12-01", "2026-03-16"),
-        "anomaly_2024_11_to_2026_03": ("2024-11-01", "2026-03-16"),
+        "full_period": (
+            df["observation_date"].min().strftime("%Y-%m-%d"),
+            df["observation_date"].max().strftime("%Y-%m-%d"),
+        ),
+        "anomaly_dynamic": (
+            anomaly_start.strftime("%Y-%m-%d"),
+            anomaly_end.strftime("%Y-%m-%d"),
+        ),
     }
 
     results = []

@@ -311,16 +311,28 @@ def run_one_period(df_period: pd.DataFrame, period_name: str, out_dir: str, enab
 
 
 def run_experiment():
-    out_dir = "analysis/lstm_validation_daily"
+    out_dir = "analysis/LSTM/lstm_mmf"
     os.makedirs(out_dir, exist_ok=True)
 
     df = pd.read_csv(f"{out_dir}/daily_dataset.csv")
     df["observation_date"] = pd.to_datetime(df["observation_date"])
     df = df.sort_values("observation_date").reset_index(drop=True)
 
+    with open("analysis/anomaly/dynamic_periods.json", "r", encoding="utf-8") as f:
+        period_info = json.load(f)
+
+    anomaly_start = pd.to_datetime(period_info["primary_anomaly_period"]["start"])
+    anomaly_end = pd.to_datetime(period_info["primary_anomaly_period"]["end"])
+
     periods = {
-        "full_2010_2026": ("2010-01-01", "2026-03-16"),
-        "anomaly_2024_11_to_2026_03": ("2024-11-01", "2026-3-16"),
+        "full_period": (
+            df["observation_date"].min().strftime("%Y-%m-%d"),
+            df["observation_date"].max().strftime("%Y-%m-%d"),
+        ),
+        "anomaly_dynamic": (
+            anomaly_start.strftime("%Y-%m-%d"),
+            anomaly_end.strftime("%Y-%m-%d"),
+        ),
     }
 
     results = []
@@ -329,7 +341,7 @@ def run_experiment():
         period_df = period_df.reset_index(drop=True)
         if len(period_df) < 120:
             raise ValueError(f"{name}: not enough rows ({len(period_df)}) for daily LSTM with seq_length=30")
-        use_tuning = name != "full_2010_2025"
+        use_tuning = name != "full_period"
         results.append(run_one_period(period_df, name, out_dir, enable_tuning=use_tuning))
 
     with open(f"{out_dir}/results.json", "w", encoding="utf-8") as f:
