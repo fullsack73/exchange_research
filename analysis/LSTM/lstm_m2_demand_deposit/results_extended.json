@@ -1,10 +1,10 @@
 {
   "train_rows": 5454,
-  "evaluated_blocks": 4,
-  "weighted_rmse_model_a": 31.832100122332967,
-  "weighted_rmse_model_b": 40.060334414694196,
-  "weighted_mae_model_a": 28.63770387906584,
-  "weighted_mae_model_b": 37.76402121878898,
+  "evaluated_blocks": 546,
+  "weighted_rmse_model_a": 15.072863100638477,
+  "weighted_rmse_model_b": 14.889185344910562,
+  "weighted_mae_model_a": 13.230249569561549,
+  "weighted_mae_model_b": 13.256774286787701,
   "best_params_a": {
     "hidden_dim": 32,
     "num_layers": 1,
@@ -21,5 +21,5 @@
     "batch_size": 32,
     "val_rmse_scaled": 0.17394806398704743
   },
-  "better_model": "A"
+  "better_model": "B"
 }

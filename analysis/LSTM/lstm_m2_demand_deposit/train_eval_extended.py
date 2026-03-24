@@ -124,7 +124,9 @@ def build_anomaly_mask(df: pd.DataFrame, period: dict) -> pd.Series:
 
 
 def evaluate_block(
-    block_df: pd.DataFrame,
+    full_df: pd.DataFrame,
+    block_start: pd.Timestamp,
+    block_end: pd.Timestamp,
     scaler_a: StandardScaler,
     scaler_b: StandardScaler,
     model_a: ExRateLSTM,
@@ -136,14 +138,22 @@ def evaluate_block(
     feat_a = ["USD_KRW", "RATE_SPREAD_KOR_USA"]
     feat_b = ["USD_KRW", "RATE_SPREAD_KOR_USA", TARGET_M2_COL]
 
-    if len(block_df) < seq_length + pred_step + 1:
+    data_a_all = scaler_a.transform(full_df[feat_a])
+    data_b_all = scaler_b.transform(full_df[feat_b])
+
+    x_a_all, y_a_all = create_sequences(data_a_all, seq_length, pred_step)
+    x_b_all, y_b_all = create_sequences(data_b_all, seq_length, pred_step)
+    if len(x_a_all) == 0 or len(x_b_all) == 0:
         return None, None
 
-    data_a = scaler_a.transform(block_df[feat_a])
-    data_b = scaler_b.transform(block_df[feat_b])
+    target_dates = full_df["observation_date"].iloc[seq_length + pred_step - 1:].reset_index(drop=True)
+    mask = (target_dates >= block_start) & (target_dates <= block_end)
+    if int(mask.sum()) == 0:
+        return None, None
 
-    x_a, y_a = create_sequences(data_a, seq_length, pred_step)
-    x_b, y_b = create_sequences(data_b, seq_length, pred_step)
+    x_a = x_a_all[mask.values]
+    y_a = y_a_all[mask.values]
+    x_b = x_b_all[mask.values]
 
     model_a.eval()
     model_b.eval()
@@ -155,14 +165,16 @@ def evaluate_block(
     pred_a_true = inverse_target(scaler_a, pred_a, len(feat_a))
     pred_b_true = inverse_target(scaler_b, pred_b, len(feat_b))
 
-    cf_df = block_df.copy()
-    cf_df[TARGET_M2_COL] = flat_m2_value
-    x_cf, _ = create_sequences(scaler_b.transform(cf_df[feat_b]), seq_length, pred_step)
+    cf_df = full_df.copy()
+    cf_mask = (cf_df["observation_date"] >= block_start) & (cf_df["observation_date"] <= block_end)
+    cf_df.loc[cf_mask, TARGET_M2_COL] = flat_m2_value
+    x_cf_all, _ = create_sequences(scaler_b.transform(cf_df[feat_b]), seq_length, pred_step)
+    x_cf = x_cf_all[mask.values]
     with torch.no_grad():
         pred_cf = model_b(torch.FloatTensor(x_cf)).numpy()
     pred_cf_true = inverse_target(scaler_b, pred_cf, len(feat_b))
 
-    pred_dates = block_df["observation_date"].iloc[seq_length + pred_step - 1:].reset_index(drop=True)
+    pred_dates = target_dates[mask.values].reset_index(drop=True)
     preds = pd.DataFrame(
         {
             "date": pred_dates,
@@ -236,9 +248,19 @@ def main() -> None:
     for idx, b in enumerate(blocks, start=1):
         s = pd.to_datetime(b["start"])
         e = pd.to_datetime(b["end"])
-        block_df = df[(df["observation_date"] >= s) & (df["observation_date"] <= e)].copy().reset_index(drop=True)
 
-        metrics, preds = evaluate_block(block_df, scaler_a, scaler_b, model_a, model_b, seq_length, pred_step, flat_m2_value)
+        metrics, preds = evaluate_block(
+            df,
+            s,
+            e,
+            scaler_a,
+            scaler_b,
+            model_a,
+            model_b,
+            seq_length,
+            pred_step,
+            flat_m2_value,
+        )
         if metrics is None:
             continue
 

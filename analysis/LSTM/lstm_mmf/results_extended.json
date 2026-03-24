@@ -1,10 +1,10 @@
 {
   "train_rows": 5454,
-  "evaluated_blocks": 4,
-  "weighted_rmse_model_a": 57.9159833292537,
-  "weighted_rmse_model_b": 41.589753455569934,
-  "weighted_mae_model_a": 56.0335660805638,
-  "weighted_mae_model_b": 36.31667346714077,
+  "evaluated_blocks": 546,
+  "weighted_rmse_model_a": 21.159969984634685,
+  "weighted_rmse_model_b": 16.61944450464235,
+  "weighted_mae_model_a": 19.502721340093967,
+  "weighted_mae_model_b": 14.315276014569735,
   "best_params_a": {
     "hidden_dim": 32,
     "num_layers": 1,
