@@ -1,30 +1,30 @@
 [
   {
-    "period": "full_2010_2026",
-    "rows": 4002,
-    "train_rows": 3201,
-    "test_rows": 801,
-    "rmse_base_arima": 7.283781388195762,
-    "rmse_model_a": 7.282185769185228,
-    "rmse_model_b": 7.300680726641026,
-    "mae_model_a": 5.313784079595993,
-    "mae_model_b": 5.363806146213097,
+    "period": "full_1995_2026",
+    "rows": 7917,
+    "train_rows": 6333,
+    "test_rows": 1584,
+    "rmse_base_arima": 7.177390514055678,
+    "rmse_model_a": 6.994674763333976,
+    "rmse_model_b": 7.413651952301283,
+    "mae_model_a": 5.009423534804407,
+    "mae_model_b": 5.310675552732744,
     "better_model": "A",
-    "plot_full": "analysis/LSTM/hybrid_mmf/full/full_2010_2026_hybrid_plot_full.png",
-    "plot_eval": "analysis/LSTM/hybrid_mmf/eval/full_2010_2026_hybrid_plot_eval.png"
+    "plot_full": "analysis/LSTM/hybrid_mmf/full/full_1995_2026_hybrid_plot_full.png",
+    "plot_eval": "analysis/LSTM/hybrid_mmf/eval/full_1995_2026_hybrid_plot_eval.png"
   },
   {
-    "period": "anomaly_2024_11_to_2026_03",
-    "rows": 332,
-    "train_rows": 265,
-    "test_rows": 67,
-    "rmse_base_arima": 9.934984753838158,
-    "rmse_model_a": 9.966280451449975,
-    "rmse_model_b": 9.954627744927487,
-    "mae_model_a": 7.45093439176139,
-    "mae_model_b": 7.490599572612962,
-    "better_model": "B",
-    "plot_full": "analysis/LSTM/hybrid_mmf/full/anomaly_2024_11_to_2026_03_hybrid_plot_full.png",
-    "plot_eval": "analysis/LSTM/hybrid_mmf/eval/anomaly_2024_11_to_2026_03_hybrid_plot_eval.png"
+    "period": "anomaly_concatenated_blocks",
+    "rows": 2463,
+    "train_rows": 1970,
+    "test_rows": 493,
+    "rmse_base_arima": 13.016420636834097,
+    "rmse_model_a": 12.987887514632039,
+    "rmse_model_b": 13.002158522275904,
+    "mae_model_a": 7.256033074165179,
+    "mae_model_b": 7.255152542219917,
+    "better_model": "A",
+    "plot_full": "analysis/LSTM/hybrid_mmf/full/anomaly_concatenated_blocks_hybrid_plot_full.png",
+    "plot_eval": "analysis/LSTM/hybrid_mmf/eval/anomaly_concatenated_blocks_hybrid_plot_eval.png"
   }
 ]

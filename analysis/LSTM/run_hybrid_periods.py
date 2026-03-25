@@ -1,89 +1,129 @@
-import os
 import copy
 import json
+import os
+from pathlib import Path
+
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
+from sklearn.metrics import mean_absolute_error, mean_squared_error
 from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import mean_squared_error, mean_absolute_error
-import matplotlib.pyplot as plt
 from statsmodels.tsa.arima.model import ARIMA
 from torch.utils.data import DataLoader, TensorDataset
 
+
 torch.manual_seed(42)
 np.random.seed(42)
+torch.set_num_threads(1)
 
-# Ensure directories exist
-OUTPUT_DIR = 'analysis/LSTM/hybrid_mmf'
+BASE_DIR = Path("/Applications/dollar_price")
+OUTPUT_DIR = BASE_DIR / "analysis" / "LSTM" / "hybrid_mmf"
+DATA_PATH = BASE_DIR / "analysis" / "LSTM" / "lstm_mmf" / "daily_dataset.csv"
+PERIOD_DEF_PATH = BASE_DIR / "analysis" / "anomaly" / "period_definition.json"
+
 os.makedirs(OUTPUT_DIR, exist_ok=True)
-os.makedirs(os.path.join(OUTPUT_DIR, 'full'), exist_ok=True)
-os.makedirs(os.path.join(OUTPUT_DIR, 'eval'), exist_ok=True)
+os.makedirs(OUTPUT_DIR / "full", exist_ok=True)
+os.makedirs(OUTPUT_DIR / "eval", exist_ok=True)
 
-# --- 1. Data Preprocessing Utility ---
-def prepare_hybrid_data_for_period(df_period, seq_length=10, test_ratio=0.2):
-    target_col = 'USD_KRW'
-    feature_cols = ['MMF_total', 'RATE_SPREAD_KOR_USA']
-    
+
+def create_sequences(X: np.ndarray, y: np.ndarray, seq_len: int):
+    xs, ys = [], []
+    for i in range(len(X) - seq_len):
+        xs.append(X[i : i + seq_len])
+        ys.append(y[i + seq_len])
+    return np.array(xs), np.array(ys)
+
+
+def load_period_definition() -> dict:
+    with open(PERIOD_DEF_PATH, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def build_anomaly_concatenated(df: pd.DataFrame, period_def: dict) -> pd.DataFrame:
+    blocks = period_def.get("anomaly_blocks_for_analysis", [])
+    rows = []
+    for idx, block in enumerate(blocks, start=1):
+        start = pd.to_datetime(block["start"])
+        end = pd.to_datetime(block["end"])
+        blk = df[(df["observation_date"] >= start) & (df["observation_date"] <= end)].copy()
+        if blk.empty:
+            continue
+        blk["block_index"] = idx
+        blk["block_start"] = start
+        blk["block_end"] = end
+        rows.append(blk)
+
+    if not rows:
+        raise ValueError("No anomaly blocks found in dataset using period_definition.json")
+
+    out = pd.concat(rows, axis=0, ignore_index=True)
+    return out.sort_values(["block_index", "observation_date"]).reset_index(drop=True)
+
+
+def prepare_hybrid_data_for_period(df_period: pd.DataFrame, seq_length: int = 10, test_ratio: float = 0.2):
+    target_col = "USD_KRW"
+    feature_cols = ["MMF_total", "RATE_SPREAD_KOR_USA"]
+
     n_total = len(df_period)
-    test_size = int(n_total * test_ratio)
+    test_size = max(int(n_total * test_ratio), 40)
     train_size = n_total - test_size
-    
+    if train_size <= seq_length + 10:
+        raise ValueError(f"Not enough train rows: {train_size}")
+
     train_ts = df_period[target_col].iloc[:train_size]
-    
-    # ARIMA for baseline trend extraction
     arima_model = ARIMA(train_ts, order=(1, 1, 1))
     arima_result = arima_model.fit()
-    
-    # Get 1-step ahead predictions for the whole series to avoid data leakage 
-    res_full = arima_result.apply(df_period[target_col])
+
     df_period = df_period.copy()
-    df_period['ARIMA_pred'] = res_full.fittedvalues
-    df_period['Residuals'] = df_period[target_col] - df_period['ARIMA_pred']
-    
-    X_cols = feature_cols + ['Residuals']
-    
-    # Drop first few rows because of ARIMA initialization instability
-    drop_init = 5
-    df_period = df_period.iloc[drop_init:].reset_index(drop=True)
-    
-    # Re-calculate train/test split after dropping initial rows
-    n_adj = len(df_period)
-    test_size_adj = test_size
-    train_size_adj = n_adj - test_size_adj
-        
+    res_full = arima_result.apply(df_period[target_col])
+    df_period["ARIMA_pred"] = res_full.fittedvalues
+    df_period["Residuals"] = df_period[target_col] - df_period["ARIMA_pred"]
+
+    # Stabilize ARIMA warm-up rows.
+    df_period = df_period.iloc[5:].reset_index(drop=True)
+
+    train_size_adj = len(df_period) - test_size
+    if train_size_adj <= seq_length + 10:
+        raise ValueError(f"Not enough adjusted train rows: {train_size_adj}")
+
     train_df = df_period.iloc[:train_size_adj].copy()
     test_df = df_period.iloc[train_size_adj:].copy()
-    
+
+    X_cols = feature_cols + ["Residuals"]
     scaler_X = StandardScaler()
     scaler_y = StandardScaler()
-    
+
     train_X = scaler_X.fit_transform(train_df[X_cols].values)
-    train_y = scaler_y.fit_transform(train_df[['Residuals']].values)
-    
-    # For sequences we need the previous data for testing
-    # So we don't just transform the test_df blindly, we overlap
-    # We take the last sequence from train
-    test_overlap = pd.concat([train_df.iloc[-seq_length:], test_df])
+    train_y = scaler_y.fit_transform(train_df[["Residuals"]].values)
+
+    full_X = scaler_X.transform(df_period[X_cols].values)
+    full_y = scaler_y.transform(df_period[["Residuals"]].values)
+
+    test_overlap = pd.concat([train_df.iloc[-seq_length:], test_df], axis=0)
     test_X = scaler_X.transform(test_overlap[X_cols].values)
-    test_y = scaler_y.transform(test_overlap[['Residuals']].values)
-    
-    def create_sequences(X, y, seq_len):
-        xs, ys = [], []
-        for i in range(len(X) - seq_len):
-            xs.append(X[i:i+seq_len])
-            ys.append(y[i+seq_len])
-        return np.array(xs), np.array(ys)
-        
+    test_y = scaler_y.transform(test_overlap[["Residuals"]].values)
+
     X_train_seq, y_train_seq = create_sequences(train_X, train_y, seq_length)
     X_test_seq, y_test_seq = create_sequences(test_X, test_y, seq_length)
-    
-    test_arima_preds = test_df['ARIMA_pred'].values
-    test_actuals = test_df[target_col].values
-    test_dates = pd.to_datetime(test_df['observation_date']).values
-    
-    return (X_train_seq, y_train_seq, X_test_seq, y_test_seq, 
-            scaler_y, test_arima_preds, test_actuals, test_dates, len(train_df), len(test_df))
+    X_full_seq, y_full_seq = create_sequences(full_X, full_y, seq_length)
+
+    return {
+        "X_train": X_train_seq,
+        "y_train": y_train_seq,
+        "X_test": X_test_seq,
+        "y_test": y_test_seq,
+        "X_full": X_full_seq,
+        "y_full": y_full_seq,
+        "df_ready": df_period,
+        "seq_length": seq_length,
+        "test_df": test_df.reset_index(drop=True),
+        "scaler_y": scaler_y,
+        "train_rows": len(train_df),
+        "test_rows": len(test_df),
+        "all_rows": len(df_period),
+    }
 
 # --- 2. Model A: ARIMA-LSTM Hybrid ---
 class LSTM_Residual_Predictor(nn.Module):
@@ -179,106 +219,259 @@ class ARIMA_CNN_LSTM_Model(ARIMA_LSTM_Model):
         self.model = CNN_LSTM_Residual_Predictor(input_dim, cnn_filters, kernel_size, hidden_dim, num_layers, dropout).to(self.device)
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr, weight_decay=weight_decay)
 
-# --- 4. Main Pipeline ---
-def run_period(period_name, period_df):
-    print(f"\n[{period_name}] Processing Period")
+def build_eval_predictions(test_df: pd.DataFrame, pred_a: np.ndarray, pred_b: np.ndarray) -> pd.DataFrame:
+    out = pd.DataFrame(
+        {
+            "date": pd.to_datetime(test_df["observation_date"]).values,
+            "actual_fx": test_df["USD_KRW"].values,
+            "pred_arima": test_df["ARIMA_pred"].values,
+            "pred_model_a": pred_a,
+            "pred_model_b": pred_b,
+        }
+    )
+    for c in ["block_index", "block_start", "block_end"]:
+        if c in test_df.columns:
+            out[c] = test_df[c].values
+    return out
+
+
+def plot_full_regular(period_name: str, df_period: pd.DataFrame, pred_df: pd.DataFrame) -> Path:
+    out_path = OUTPUT_DIR / "full" / f"{period_name}_hybrid_plot_full.png"
+    fig, ax = plt.subplots(figsize=(15, 6))
+    ax.plot(df_period["observation_date"], df_period["USD_KRW"], color="black", linewidth=1.4, label="Actual USD/KRW")
+    ax.plot(pred_df["date"], pred_df["pred_arima"], color="grey", linestyle="--", alpha=0.8, label="ARIMA Baseline")
+    ax.plot(pred_df["date"], pred_df["pred_model_a"], color="#1f77b4", alpha=0.9, label="Model A (ARIMA-LSTM)")
+    ax.plot(pred_df["date"], pred_df["pred_model_b"], color="#d62728", alpha=0.9, label="Model B (ARIMA-CNN-LSTM)")
+    ax.set_title(f"{period_name}: Full Range (1995-2026)")
+    ax.set_xlabel("Date")
+    ax.set_ylabel("USD/KRW")
+    ax.grid(alpha=0.25)
+    ax.legend(loc="best")
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=140)
+    plt.close(fig)
+    return out_path
+
+
+def plot_eval_regular(period_name: str, pred_df: pd.DataFrame) -> Path:
+    out_path = OUTPUT_DIR / "eval" / f"{period_name}_hybrid_plot_eval.png"
+    fig, ax = plt.subplots(figsize=(15, 6))
+    ax.plot(pred_df["date"], pred_df["actual_fx"], color="black", linewidth=1.6, label="Actual USD/KRW")
+    ax.plot(pred_df["date"], pred_df["pred_arima"], color="grey", linestyle="--", alpha=0.8, label="ARIMA Baseline")
+    ax.plot(pred_df["date"], pred_df["pred_model_a"], color="#1f77b4", alpha=0.9, label="Model A (ARIMA-LSTM)")
+    ax.plot(pred_df["date"], pred_df["pred_model_b"], color="#d62728", alpha=0.9, label="Model B (ARIMA-CNN-LSTM)")
+    ax.set_title(f"{period_name}: Test/Eval Range")
+    ax.set_xlabel("Date")
+    ax.set_ylabel("USD/KRW")
+    ax.grid(alpha=0.25)
+    ax.legend(loc="best")
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=140)
+    plt.close(fig)
+    return out_path
+
+
+def plot_anomaly_block_full(pred_df: pd.DataFrame, period_name: str) -> Path:
+    out_path = OUTPUT_DIR / "full" / f"{period_name}_hybrid_plot_full.png"
+    fig, ax = plt.subplots(figsize=(16, 7))
+    for _, blk in pred_df.groupby("block_index", sort=True):
+        d = pd.to_datetime(blk["date"])
+        ax.plot(d, blk["actual_fx"], color="black", linewidth=2.0, alpha=0.65)
+        ax.plot(d, blk["pred_model_a"], color="#1f77b4", linewidth=1.4, alpha=0.85)
+        ax.plot(d, blk["pred_model_b"], color="#d62728", linewidth=1.4, alpha=0.85)
+    handles = [
+        plt.Line2D([0], [0], color="black", lw=2.0, label="Actual FX"),
+        plt.Line2D([0], [0], color="#1f77b4", lw=1.4, label="Model A (ARIMA-LSTM)"),
+        plt.Line2D([0], [0], color="#d62728", lw=1.4, label="Model B (ARIMA-CNN-LSTM)"),
+    ]
+    s = pd.to_datetime(pred_df["date"]).min()
+    e = pd.to_datetime(pred_df["date"]).max()
+    ax.set_title(
+        f"{period_name}: Full Date-Range Plot (all anomaly blocks)\n"
+        f"{s.strftime('%Y-%m-%d')} to {e.strftime('%Y-%m-%d')}"
+    )
+    ax.set_xlabel("Date")
+    ax.set_ylabel("USD/KRW")
+    ax.grid(alpha=0.25)
+    ax.legend(handles=handles, loc="best", fontsize=9)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=140)
+    plt.close(fig)
+    return out_path
+
+
+def plot_anomaly_block_eval(pred_df: pd.DataFrame, period_name: str) -> Path:
+    out_path = OUTPUT_DIR / "eval" / f"{period_name}_hybrid_plot_eval.png"
+    pred_df = pred_df.sort_values(["block_index", "date"]).reset_index(drop=True).copy()
+    pred_df["concat_step"] = np.arange(1, len(pred_df) + 1)
+
+    fig, ax = plt.subplots(figsize=(16, 7))
+    ax.plot(pred_df["concat_step"], pred_df["actual_fx"], color="black", linewidth=2.0, alpha=0.75, label="Actual FX")
+    ax.plot(pred_df["concat_step"], pred_df["pred_model_a"], color="#1f77b4", linewidth=1.4, alpha=0.9, label="Model A (ARIMA-LSTM)")
+    ax.plot(pred_df["concat_step"], pred_df["pred_model_b"], color="#d62728", linewidth=1.4, alpha=0.9, label="Model B (ARIMA-CNN-LSTM)")
+
+    boundary_steps = pred_df.groupby("block_index", sort=True)["concat_step"].max().tolist()
+    for s in boundary_steps[:-1]:
+        ax.axvline(s, color="gray", alpha=0.2, linewidth=0.8)
+
+    blocks = pred_df["block_index"].nunique()
+    d0 = pd.to_datetime(pred_df["date"]).min().strftime("%Y-%m-%d")
+    d1 = pd.to_datetime(pred_df["date"]).max().strftime("%Y-%m-%d")
+    ax.set_title(
+        f"{period_name}: Concatenated Eval Plot (anomaly blocks stitched)\n"
+        f"blocks={blocks}, samples={len(pred_df)}, date span {d0} to {d1}"
+    )
+    ax.set_xlabel("Concatenated time step")
+    ax.set_ylabel("USD/KRW")
+    ax.grid(alpha=0.25)
+    ax.legend(loc="best", fontsize=9)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=140)
+    plt.close(fig)
+    return out_path
+
+
+def run_period(period_name: str, period_df: pd.DataFrame, is_anomaly_blocks: bool = False):
+    print(f"\\n[{period_name}] Processing Period")
     seq_length = 10
-    
-    (X_train, y_train, X_test, y_test, scaler_y, 
-     test_arima_preds, test_actuals, test_dates,
-     train_cnt, test_cnt) = prepare_hybrid_data_for_period(period_df, seq_length=seq_length, test_ratio=0.2)
-     
+    prepared = prepare_hybrid_data_for_period(period_df, seq_length=seq_length, test_ratio=0.2)
+
+    X_train = prepared["X_train"]
+    y_train = prepared["y_train"]
+    X_test = prepared["X_test"]
+    X_full = prepared["X_full"]
+    scaler_y = prepared["scaler_y"]
+    test_df = prepared["test_df"]
+    df_ready = prepared["df_ready"]
+    seq_length = prepared["seq_length"]
+
     input_dim = X_train.shape[2]
-    print(f"Train samples: {train_cnt}, Test samples: {test_cnt}")
-    
-    # Train Model A
+    print(f"Train rows: {prepared['train_rows']}, Test rows: {prepared['test_rows']}")
+
     print(f"[{period_name}] Training Model A (ARIMA-LSTM)...")
     model_A = ARIMA_LSTM_Model(input_dim=input_dim, hidden_dim=32, dropout=0.2)
     model_A.fit(X_train, y_train, epochs=100)
-    preds_y_A = model_A.predict(X_test)
-    preds_residual_A = scaler_y.inverse_transform(preds_y_A).flatten()
-    final_preds_A = test_arima_preds + preds_residual_A
-    
-    # Train Model B
+    pred_a_scaled = model_A.predict(X_test)
+    pred_a_resid = scaler_y.inverse_transform(pred_a_scaled).flatten()
+
     print(f"[{period_name}] Training Model B (ARIMA-CNN-LSTM)...")
     model_B = ARIMA_CNN_LSTM_Model(input_dim=input_dim, cnn_filters=16, kernel_size=3, hidden_dim=32, dropout=0.2)
     model_B.fit(X_train, y_train, epochs=100)
-    preds_y_B = model_B.predict(X_test)
-    preds_residual_B = scaler_y.inverse_transform(preds_y_B).flatten()
-    final_preds_B = test_arima_preds + preds_residual_B
-    
-    rmse_base = np.sqrt(mean_squared_error(test_actuals, test_arima_preds))
-    rmse_A = np.sqrt(mean_squared_error(test_actuals, final_preds_A))
-    mae_A = mean_absolute_error(test_actuals, final_preds_A)
-    
-    rmse_B = np.sqrt(mean_squared_error(test_actuals, final_preds_B))
-    mae_B = mean_absolute_error(test_actuals, final_preds_B)
-    
-    better = "A" if rmse_A < rmse_B else "B"
+    pred_b_scaled = model_B.predict(X_test)
+    pred_b_resid = scaler_y.inverse_transform(pred_b_scaled).flatten()
+
+    pred_a_full_scaled = model_A.predict(X_full)
+    pred_b_full_scaled = model_B.predict(X_full)
+    pred_a_full_resid = scaler_y.inverse_transform(pred_a_full_scaled).flatten()
+    pred_b_full_resid = scaler_y.inverse_transform(pred_b_full_scaled).flatten()
+
+    test_arima = test_df["ARIMA_pred"].values
+    actual = test_df["USD_KRW"].values
+    final_a = test_arima + pred_a_resid
+    final_b = test_arima + pred_b_resid
+
+    df_full_aligned = df_ready.iloc[seq_length:].reset_index(drop=True)
+    full_arima = df_full_aligned["ARIMA_pred"].values
+    full_final_a = full_arima + pred_a_full_resid
+    full_final_b = full_arima + pred_b_full_resid
+
+    rmse_base = float(np.sqrt(mean_squared_error(actual, test_arima)))
+    rmse_a = float(np.sqrt(mean_squared_error(actual, final_a)))
+    rmse_b = float(np.sqrt(mean_squared_error(actual, final_b)))
+    mae_a = float(mean_absolute_error(actual, final_a))
+    mae_b = float(mean_absolute_error(actual, final_b))
+    better = "A" if rmse_a < rmse_b else "B"
+
+    pred_df = build_eval_predictions(test_df, final_a, final_b)
+    pred_df_full = build_eval_predictions(df_full_aligned, full_final_a, full_final_b)
+
+    if is_anomaly_blocks:
+        plot_full_path = plot_anomaly_block_full(pred_df_full, period_name)
+        plot_eval_path = plot_anomaly_block_eval(pred_df, period_name)
+        pred_csv_path = OUTPUT_DIR / "eval" / "predictions.csv"
+        pred_df_full.to_csv(pred_csv_path, index=False)
+
+        by_block = []
+        for bid, blk in pred_df_full.groupby("block_index", sort=True):
+            if len(blk) < 2:
+                continue
+            by_block.append(
+                {
+                    "block_index": int(bid),
+                    "rows": int(len(blk)),
+                    "start": str(pd.to_datetime(blk["date"]).min().date()),
+                    "end": str(pd.to_datetime(blk["date"]).max().date()),
+                    "rmse_model_a": float(np.sqrt(mean_squared_error(blk["actual_fx"], blk["pred_model_a"]))),
+                    "rmse_model_b": float(np.sqrt(mean_squared_error(blk["actual_fx"], blk["pred_model_b"]))),
+                    "mae_model_a": float(mean_absolute_error(blk["actual_fx"], blk["pred_model_a"])),
+                    "mae_model_b": float(mean_absolute_error(blk["actual_fx"], blk["pred_model_b"])),
+                }
+            )
+        pd.DataFrame(by_block).to_csv(OUTPUT_DIR / "eval" / "block_metrics.csv", index=False)
+    else:
+        plot_full_path = plot_full_regular(period_name, period_df, pred_df_full)
+        plot_eval_path = plot_eval_regular(period_name, pred_df)
+
     print(f"Base ARIMA RMSE: {rmse_base:.4f}")
-    print(f"Model A RMSE: {rmse_A:.4f} | MAE: {mae_A:.4f}")
-    print(f"Model B RMSE: {rmse_B:.4f} | MAE: {mae_B:.4f}")
-    print(f"Better model for {period_name} is Model {better}")
-    
-    # Plotting
-    plot_full_path = os.path.join(OUTPUT_DIR, 'full', f'{period_name}_hybrid_plot_full.png')
-    plot_eval_path = os.path.join(OUTPUT_DIR, 'eval', f'{period_name}_hybrid_plot_eval.png')
-    
-    plt.figure(figsize=(15, 6))
-    plt.plot(test_dates, test_actuals, label='Actual USD/KRW', color='black', linewidth=1.5)
-    plt.plot(test_dates, test_arima_preds, label='ARIMA Baseline', color='grey', linestyle='--', alpha=0.7)
-    plt.plot(test_dates, final_preds_A, label='Model A (ARIMA-LSTM)', color='blue', alpha=0.8)
-    plt.plot(test_dates, final_preds_B, label='Model B (ARIMA-CNN-LSTM)', color='red', alpha=0.9)
-    plt.title(f'{period_name}: USD/KRW Hybrid Forecasting', fontsize=16)
-    plt.xlabel('Date', fontsize=12)
-    plt.ylabel('Exchange Rate', fontsize=12)
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-    plt.tight_layout()
-    plt.savefig(plot_eval_path)
-    plt.close()
-    
+    print(f"Model A RMSE: {rmse_a:.4f} | MAE: {mae_a:.4f}")
+    print(f"Model B RMSE: {rmse_b:.4f} | MAE: {mae_b:.4f}")
+    print(f"Better model for {period_name}: {better}")
+
     return {
         "period": period_name,
-        "rows": train_cnt + test_cnt,
-        "train_rows": train_cnt,
-        "test_rows": test_cnt,
+        "rows": prepared["all_rows"],
+        "train_rows": prepared["train_rows"],
+        "test_rows": prepared["test_rows"],
         "rmse_base_arima": rmse_base,
-        "rmse_model_a": rmse_A,
-        "rmse_model_b": rmse_B,
-        "mae_model_a": mae_A,
-        "mae_model_b": mae_B,
+        "rmse_model_a": rmse_a,
+        "rmse_model_b": rmse_b,
+        "mae_model_a": mae_a,
+        "mae_model_b": mae_b,
         "better_model": better,
-        "plot_full": plot_full_path,
-        "plot_eval": plot_eval_path
+        "plot_full": str(plot_full_path.relative_to(BASE_DIR)),
+        "plot_eval": str(plot_eval_path.relative_to(BASE_DIR)),
     }
 
 def main():
-    data_path = 'analysis/LSTM/lstm_mmf/daily_dataset.csv'
-    df = pd.read_csv(data_path)
-    df['observation_date'] = pd.to_datetime(df['observation_date'])
-    df = df.sort_values('observation_date').reset_index(drop=True)
-    
-    # 1. Full Period (2010 to 2026 roughly similar to existing results.json)
-    df_full = df[df['observation_date'] >= '2010-01-01'].copy()
-    
-    # 2. Anomaly Period (2024-11 to 2026-03)
-    df_anomaly = df[df['observation_date'] >= '2024-11-01'].copy()
-    
+    df = pd.read_csv(DATA_PATH)
+    df["observation_date"] = pd.to_datetime(df["observation_date"])
+    df = df.sort_values("observation_date").reset_index(drop=True)
+
+    period_def = load_period_definition()
+    range_start = pd.to_datetime(period_def["data_range"]["start"])
+    range_end = pd.to_datetime(period_def["data_range"]["end"])
+    df_full = df[(df["observation_date"] >= range_start) & (df["observation_date"] <= range_end)].copy()
+
+    df_anomaly_concat = build_anomaly_concatenated(df_full, period_def)
+
     results = []
-    
-    # Run Full Period
-    res_full = run_period("full_2010_2026", df_full)
-    results.append(res_full)
-    
-    # Run Anomaly Period
-    res_anomaly = run_period("anomaly_2024_11_to_2026_03", df_anomaly)
-    results.append(res_anomaly)
-    
-    # Save Results
-    res_path = os.path.join(OUTPUT_DIR, 'results.json')
-    with open(res_path, 'w', encoding='utf-8') as f:
+    results.append(run_period("full_1995_2026", df_full, is_anomaly_blocks=False))
+    results.append(run_period("anomaly_concatenated_blocks", df_anomaly_concat, is_anomaly_blocks=True))
+
+    with open(OUTPUT_DIR / "results.json", "w", encoding="utf-8") as f:
         json.dump(results, f, indent=2, ensure_ascii=False)
+
+    lines = [
+        "Hybrid ARIMA-LSTM vs ARIMA-CNN-LSTM",
+        f"Data range: {range_start.date()} to {range_end.date()}",
+        "Anomaly definition: period_definition.json -> anomaly_blocks_for_analysis",
+        "",
+    ]
+    for r in results:
+        lines.append(f"[{r['period']}]")
+        lines.append(f"Rows: {r['rows']} (train={r['train_rows']}, test={r['test_rows']})")
+        lines.append(f"RMSE base: {r['rmse_base_arima']:.4f}")
+        lines.append(f"RMSE A: {r['rmse_model_a']:.4f} | MAE A: {r['mae_model_a']:.4f}")
+        lines.append(f"RMSE B: {r['rmse_model_b']:.4f} | MAE B: {r['mae_model_b']:.4f}")
+        lines.append(f"Better model: {r['better_model']}")
+        lines.append(f"Plot Full: {r['plot_full']}")
+        lines.append(f"Plot Eval: {r['plot_eval']}")
+        lines.append("")
+
+    with open(OUTPUT_DIR / "results.txt", "w", encoding="utf-8") as f:
+        f.write("\n".join(lines))
+
+    print("\n".join(lines))
 
 if __name__ == '__main__':
     main()
