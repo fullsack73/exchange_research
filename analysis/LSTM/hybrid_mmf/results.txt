@@ -5,8 +5,8 @@ Anomaly definition: period_definition.json -> anomaly_blocks_for_analysis
 [full_1995_2026]
 Rows: 7917 (train=6333, test=1584)
 RMSE base: 7.1774
-RMSE A: 6.9947 | MAE A: 5.0094
-RMSE B: 7.4137 | MAE B: 5.3107
+RMSE A: 6.9247 | MAE A: 4.9382
+RMSE B: 6.9415 | MAE B: 4.9425
 Better model: A
 Plot Full: analysis/LSTM/hybrid_mmf/full/full_1995_2026_hybrid_plot_full.png
 Plot Eval: analysis/LSTM/hybrid_mmf/eval/full_1995_2026_hybrid_plot_eval.png
@@ -14,8 +14,8 @@ Plot Eval: analysis/LSTM/hybrid_mmf/eval/full_1995_2026_hybrid_plot_eval.png
 [anomaly_concatenated_blocks]
 Rows: 2463 (train=1970, test=493)
 RMSE base: 13.0164
-RMSE A: 12.9879 | MAE A: 7.2560
-RMSE B: 13.0022 | MAE B: 7.2552
+RMSE A: 12.9391 | MAE A: 7.1664
+RMSE B: 13.1314 | MAE B: 7.5087
 Better model: A
 Plot Full: analysis/LSTM/hybrid_mmf/full/anomaly_concatenated_blocks_hybrid_plot_full.png
 Plot Eval: analysis/LSTM/hybrid_mmf/eval/anomaly_concatenated_blocks_hybrid_plot_eval.png

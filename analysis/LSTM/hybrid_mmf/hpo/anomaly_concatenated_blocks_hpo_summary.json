@@ -1,0 +1,32 @@
+{
+  "period": "anomaly_concatenated_blocks",
+  "total_trials": 100,
+  "trials_model_a": 50,
+  "trials_model_b": 50,
+  "best_params_a": {
+    "hidden_dim": 16,
+    "num_layers": 1,
+    "dropout": 0.1,
+    "lr": 0.0005,
+    "weight_decay": 1e-05,
+    "batch_size": 32,
+    "epochs": 50,
+    "patience": 6
+  },
+  "best_params_b": {
+    "hidden_dim": 16,
+    "num_layers": 1,
+    "dropout": 0.2,
+    "lr": 0.001,
+    "weight_decay": 1e-05,
+    "batch_size": 32,
+    "epochs": 50,
+    "patience": 6,
+    "cnn_filters": 12,
+    "kernel_size": 7
+  },
+  "best_val_rmse_scaled_a": 0.3772112209518359,
+  "best_val_rmse_scaled_b": 0.37611886295098707,
+  "trial_log_a": "analysis/LSTM/hybrid_mmf/hpo/anomaly_concatenated_blocks_model_a_trials.csv",
+  "trial_log_b": "analysis/LSTM/hybrid_mmf/hpo/anomaly_concatenated_blocks_model_b_trials.csv"
+}

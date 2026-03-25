@@ -1,6 +1,8 @@
 import copy
+import itertools
 import json
 import os
+import time
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -26,6 +28,12 @@ PERIOD_DEF_PATH = BASE_DIR / "analysis" / "anomaly" / "period_definition.json"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR / "full", exist_ok=True)
 os.makedirs(OUTPUT_DIR / "eval", exist_ok=True)
+os.makedirs(OUTPUT_DIR / "hpo", exist_ok=True)
+
+TOTAL_HPO_TRIALS = 100
+TRIALS_PER_MODEL = TOTAL_HPO_TRIALS // 2
+MAX_TUNE_TRAIN = 1200
+MAX_TUNE_VAL = 300
 
 
 def create_sequences(X: np.ndarray, y: np.ndarray, seq_len: int):
@@ -186,6 +194,10 @@ class ARIMA_LSTM_Model:
                 if patience_counter >= patience:
                     break
         self.model.load_state_dict(best_model_wts)
+        return {
+            "best_val_loss": float(best_loss),
+            "epochs_ran": int(epoch + 1),
+        }
         
     def predict(self, X_test):
         self.model.eval()
@@ -218,6 +230,177 @@ class ARIMA_CNN_LSTM_Model(ARIMA_LSTM_Model):
         super(ARIMA_CNN_LSTM_Model, self).__init__(input_dim, hidden_dim, num_layers, dropout, lr, weight_decay)
         self.model = CNN_LSTM_Residual_Predictor(input_dim, cnn_filters, kernel_size, hidden_dim, num_layers, dropout).to(self.device)
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr, weight_decay=weight_decay)
+
+
+def split_train_val_timeseries(X: np.ndarray, y: np.ndarray, val_ratio: float = 0.1):
+    val_n = max(int(len(X) * val_ratio), 40)
+    val_n = min(val_n, max(len(X) - 40, 1))
+    train_n = len(X) - val_n
+    return X[:train_n], y[:train_n], X[train_n:], y[train_n:]
+
+
+def cap_tuning_sample(X_t: np.ndarray, y_t: np.ndarray, X_v: np.ndarray, y_v: np.ndarray):
+    if len(X_t) > MAX_TUNE_TRAIN:
+        X_t = X_t[-MAX_TUNE_TRAIN:]
+        y_t = y_t[-MAX_TUNE_TRAIN:]
+    if len(X_v) > MAX_TUNE_VAL:
+        X_v = X_v[-MAX_TUNE_VAL:]
+        y_v = y_v[-MAX_TUNE_VAL:]
+    return X_t, y_t, X_v, y_v
+
+
+def evaluate_scaled_rmse_mae(y_true: np.ndarray, y_pred: np.ndarray):
+    rmse = float(np.sqrt(mean_squared_error(y_true, y_pred)))
+    mae = float(mean_absolute_error(y_true, y_pred))
+    return rmse, mae
+
+
+def build_model_a_grid():
+    # 5 x 5 x 2 = 50 trials
+    hidden_dims = [16, 32, 48, 64, 96]
+    lrs = [0.0005, 0.001, 0.0015, 0.002, 0.003]
+    dropouts = [0.1, 0.2]
+    grid = []
+    for hidden_dim, lr, dropout in itertools.product(hidden_dims, lrs, dropouts):
+        grid.append(
+            {
+                "hidden_dim": hidden_dim,
+                "num_layers": 1,
+                "dropout": dropout,
+                "lr": lr,
+                "weight_decay": 1e-5,
+                "batch_size": 32,
+                "epochs": 50,
+                "patience": 6,
+            }
+        )
+    return grid[:TRIALS_PER_MODEL]
+
+
+def build_model_b_grid():
+    # 2 x 5 x 5 = 50 trials
+    hidden_dims = [16, 32]
+    cnn_filters = [8, 12, 16, 20, 24]
+    kernel_sizes = [3, 4, 5, 6, 7]
+    grid = []
+    for hidden_dim, cnn_filter, kernel_size in itertools.product(hidden_dims, cnn_filters, kernel_sizes):
+        grid.append(
+            {
+                "hidden_dim": hidden_dim,
+                "num_layers": 1,
+                "dropout": 0.2,
+                "lr": 0.001,
+                "weight_decay": 1e-5,
+                "batch_size": 32,
+                "epochs": 50,
+                "patience": 6,
+                "cnn_filters": cnn_filter,
+                "kernel_size": kernel_size,
+            }
+        )
+    return grid[:TRIALS_PER_MODEL]
+
+
+def tune_model_a(period_name: str, X_train: np.ndarray, y_train: np.ndarray, input_dim: int):
+    X_t, y_t, X_v, y_v = split_train_val_timeseries(X_train, y_train, val_ratio=0.1)
+    X_t, y_t, X_v, y_v = cap_tuning_sample(X_t, y_t, X_v, y_v)
+
+    trials = []
+    best_cfg = None
+    best_rmse = float("inf")
+
+    for idx, cfg in enumerate(build_model_a_grid(), start=1):
+        start = time.time()
+        torch.manual_seed(42 + idx)
+        np.random.seed(42 + idx)
+
+        model = ARIMA_LSTM_Model(
+            input_dim=input_dim,
+            hidden_dim=cfg["hidden_dim"],
+            num_layers=cfg["num_layers"],
+            dropout=cfg["dropout"],
+            lr=cfg["lr"],
+            weight_decay=cfg["weight_decay"],
+        )
+        fit_info = model.fit(X_t, y_t, epochs=cfg["epochs"], batch_size=cfg["batch_size"], patience=cfg["patience"])
+        pred_t = model.predict(X_t)
+        pred_v = model.predict(X_v)
+        train_rmse, train_mae = evaluate_scaled_rmse_mae(y_t, pred_t)
+        val_rmse, val_mae = evaluate_scaled_rmse_mae(y_v, pred_v)
+        duration = time.time() - start
+
+        record = {
+            "trial": idx,
+            "model": "A",
+            **cfg,
+            "train_rmse_scaled": train_rmse,
+            "train_mae_scaled": train_mae,
+            "val_rmse_scaled": val_rmse,
+            "val_mae_scaled": val_mae,
+            "generalization_gap_rmse": val_rmse - train_rmse,
+            "epochs_ran": fit_info["epochs_ran"],
+            "duration_sec": duration,
+        }
+        trials.append(record)
+        if val_rmse < best_rmse:
+            best_rmse = val_rmse
+            best_cfg = cfg
+
+    trial_path = OUTPUT_DIR / "hpo" / f"{period_name}_model_a_trials.csv"
+    pd.DataFrame(trials).to_csv(trial_path, index=False)
+    return best_cfg, trials, trial_path
+
+
+def tune_model_b(period_name: str, X_train: np.ndarray, y_train: np.ndarray, input_dim: int):
+    X_t, y_t, X_v, y_v = split_train_val_timeseries(X_train, y_train, val_ratio=0.1)
+    X_t, y_t, X_v, y_v = cap_tuning_sample(X_t, y_t, X_v, y_v)
+
+    trials = []
+    best_cfg = None
+    best_rmse = float("inf")
+
+    for idx, cfg in enumerate(build_model_b_grid(), start=1):
+        start = time.time()
+        torch.manual_seed(4200 + idx)
+        np.random.seed(4200 + idx)
+
+        model = ARIMA_CNN_LSTM_Model(
+            input_dim=input_dim,
+            cnn_filters=cfg["cnn_filters"],
+            kernel_size=cfg["kernel_size"],
+            hidden_dim=cfg["hidden_dim"],
+            num_layers=cfg["num_layers"],
+            dropout=cfg["dropout"],
+            lr=cfg["lr"],
+            weight_decay=cfg["weight_decay"],
+        )
+        fit_info = model.fit(X_t, y_t, epochs=cfg["epochs"], batch_size=cfg["batch_size"], patience=cfg["patience"])
+        pred_t = model.predict(X_t)
+        pred_v = model.predict(X_v)
+        train_rmse, train_mae = evaluate_scaled_rmse_mae(y_t, pred_t)
+        val_rmse, val_mae = evaluate_scaled_rmse_mae(y_v, pred_v)
+        duration = time.time() - start
+
+        record = {
+            "trial": idx,
+            "model": "B",
+            **cfg,
+            "train_rmse_scaled": train_rmse,
+            "train_mae_scaled": train_mae,
+            "val_rmse_scaled": val_rmse,
+            "val_mae_scaled": val_mae,
+            "generalization_gap_rmse": val_rmse - train_rmse,
+            "epochs_ran": fit_info["epochs_ran"],
+            "duration_sec": duration,
+        }
+        trials.append(record)
+        if val_rmse < best_rmse:
+            best_rmse = val_rmse
+            best_cfg = cfg
+
+    trial_path = OUTPUT_DIR / "hpo" / f"{period_name}_model_b_trials.csv"
+    pd.DataFrame(trials).to_csv(trial_path, index=False)
+    return best_cfg, trials, trial_path
 
 def build_eval_predictions(test_df: pd.DataFrame, pred_a: np.ndarray, pred_b: np.ndarray) -> pd.DataFrame:
     out = pd.DataFrame(
@@ -348,15 +531,49 @@ def run_period(period_name: str, period_df: pd.DataFrame, is_anomaly_blocks: boo
     input_dim = X_train.shape[2]
     print(f"Train rows: {prepared['train_rows']}, Test rows: {prepared['test_rows']}")
 
+    print(f"[{period_name}] HPO Grid Search start (total={TOTAL_HPO_TRIALS}, A={TRIALS_PER_MODEL}, B={TRIALS_PER_MODEL})...")
+    best_a_cfg, trials_a, trials_a_path = tune_model_a(period_name, X_train, y_train, input_dim)
+    best_b_cfg, trials_b, trials_b_path = tune_model_b(period_name, X_train, y_train, input_dim)
+    print(f"[{period_name}] HPO done. Best A: {best_a_cfg}")
+    print(f"[{period_name}] HPO done. Best B: {best_b_cfg}")
+
     print(f"[{period_name}] Training Model A (ARIMA-LSTM)...")
-    model_A = ARIMA_LSTM_Model(input_dim=input_dim, hidden_dim=32, dropout=0.2)
-    model_A.fit(X_train, y_train, epochs=100)
+    model_A = ARIMA_LSTM_Model(
+        input_dim=input_dim,
+        hidden_dim=best_a_cfg["hidden_dim"],
+        num_layers=best_a_cfg["num_layers"],
+        dropout=best_a_cfg["dropout"],
+        lr=best_a_cfg["lr"],
+        weight_decay=best_a_cfg["weight_decay"],
+    )
+    model_A.fit(
+        X_train,
+        y_train,
+        epochs=best_a_cfg["epochs"],
+        batch_size=best_a_cfg["batch_size"],
+        patience=best_a_cfg["patience"],
+    )
     pred_a_scaled = model_A.predict(X_test)
     pred_a_resid = scaler_y.inverse_transform(pred_a_scaled).flatten()
 
     print(f"[{period_name}] Training Model B (ARIMA-CNN-LSTM)...")
-    model_B = ARIMA_CNN_LSTM_Model(input_dim=input_dim, cnn_filters=16, kernel_size=3, hidden_dim=32, dropout=0.2)
-    model_B.fit(X_train, y_train, epochs=100)
+    model_B = ARIMA_CNN_LSTM_Model(
+        input_dim=input_dim,
+        cnn_filters=best_b_cfg["cnn_filters"],
+        kernel_size=best_b_cfg["kernel_size"],
+        hidden_dim=best_b_cfg["hidden_dim"],
+        num_layers=best_b_cfg["num_layers"],
+        dropout=best_b_cfg["dropout"],
+        lr=best_b_cfg["lr"],
+        weight_decay=best_b_cfg["weight_decay"],
+    )
+    model_B.fit(
+        X_train,
+        y_train,
+        epochs=best_b_cfg["epochs"],
+        batch_size=best_b_cfg["batch_size"],
+        patience=best_b_cfg["patience"],
+    )
     pred_b_scaled = model_B.predict(X_test)
     pred_b_resid = scaler_y.inverse_transform(pred_b_scaled).flatten()
 
@@ -417,6 +634,22 @@ def run_period(period_name: str, period_df: pd.DataFrame, is_anomaly_blocks: boo
     print(f"Model B RMSE: {rmse_b:.4f} | MAE: {mae_b:.4f}")
     print(f"Better model for {period_name}: {better}")
 
+    hpo_summary = {
+        "period": period_name,
+        "total_trials": TOTAL_HPO_TRIALS,
+        "trials_model_a": len(trials_a),
+        "trials_model_b": len(trials_b),
+        "best_params_a": best_a_cfg,
+        "best_params_b": best_b_cfg,
+        "best_val_rmse_scaled_a": float(min(t["val_rmse_scaled"] for t in trials_a)),
+        "best_val_rmse_scaled_b": float(min(t["val_rmse_scaled"] for t in trials_b)),
+        "trial_log_a": str(trials_a_path.relative_to(BASE_DIR)),
+        "trial_log_b": str(trials_b_path.relative_to(BASE_DIR)),
+    }
+    hpo_summary_path = OUTPUT_DIR / "hpo" / f"{period_name}_hpo_summary.json"
+    with open(hpo_summary_path, "w", encoding="utf-8") as f:
+        json.dump(hpo_summary, f, indent=2, ensure_ascii=False)
+
     return {
         "period": period_name,
         "rows": prepared["all_rows"],
@@ -428,6 +661,9 @@ def run_period(period_name: str, period_df: pd.DataFrame, is_anomaly_blocks: boo
         "mae_model_a": mae_a,
         "mae_model_b": mae_b,
         "better_model": better,
+        "best_params_a": best_a_cfg,
+        "best_params_b": best_b_cfg,
+        "hpo_summary": str(hpo_summary_path.relative_to(BASE_DIR)),
         "plot_full": str(plot_full_path.relative_to(BASE_DIR)),
         "plot_eval": str(plot_eval_path.relative_to(BASE_DIR)),
     }
