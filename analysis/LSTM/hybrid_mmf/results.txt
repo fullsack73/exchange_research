@@ -1,21 +1,37 @@
-Hybrid ARIMA-LSTM vs ARIMA-CNN-LSTM
-Data range: 1995-01-01 to 2026-03-20
-Anomaly definition: period_definition.json -> anomaly_blocks_for_analysis
+Upgraded Architecture: Log Return & Multi-step Loss Hybrid
 
 [full_1995_2026]
-Rows: 7917 (train=6333, test=1584)
-RMSE base: 7.1774
-RMSE A: 6.9247 | MAE A: 4.9382
-RMSE B: 6.9415 | MAE B: 4.9425
+Rows: 7921 (train=6337, test=1585)
+RMSE Naive Base: 6.7502
+RMSE A (LSTM): 6.8251 | MAE A: 4.8869
+RMSE B (CNN-LSTM): 8.4832 | MAE B: 6.0113
 Better model: A
 Plot Full: analysis/LSTM/hybrid_mmf/full/full_1995_2026_hybrid_plot_full.png
 Plot Eval: analysis/LSTM/hybrid_mmf/eval/full_1995_2026_hybrid_plot_eval.png
 
 [anomaly_concatenated_blocks]
-Rows: 2463 (train=1970, test=493)
-RMSE base: 13.0164
-RMSE A: 12.9391 | MAE A: 7.1664
-RMSE B: 13.1314 | MAE B: 7.5087
-Better model: A
+Rows: 2467 (train=1974, test=494)
+RMSE Naive Base: 12.7795
+RMSE A (LSTM): 13.0810 | MAE A: 7.3984
+RMSE B (CNN-LSTM): 12.8470 | MAE B: 7.0617
+Better model: B
 Plot Full: analysis/LSTM/hybrid_mmf/full/anomaly_concatenated_blocks_hybrid_plot_full.png
 Plot Eval: analysis/LSTM/hybrid_mmf/eval/anomaly_concatenated_blocks_hybrid_plot_eval.png
+
+[anomaly_2024_11_to_2026_03]
+Rows: 336 (train=269, test=68)
+RMSE Naive Base: 10.0346
+RMSE A (LSTM): 10.0676 | MAE A: 7.7322
+RMSE B (CNN-LSTM): 12.6793 | MAE B: 9.6378
+Better model: A
+Plot Full: analysis/LSTM/hybrid_mmf/full/anomaly_2024_11_to_2026_03_hybrid_plot_full.png
+Plot Eval: analysis/LSTM/hybrid_mmf/eval/anomaly_2024_11_to_2026_03_hybrid_plot_eval.png
+
+[full_2010_2026]
+Rows: 4006 (train=3205, test=802)
+RMSE Naive Base: 7.2803
+RMSE A (LSTM): 8.6873 | MAE A: 6.6278
+RMSE B (CNN-LSTM): 7.5230 | MAE B: 5.5422
+Better model: B
+Plot Full: analysis/LSTM/hybrid_mmf/full/full_2010_2026_hybrid_plot_full.png
+Plot Eval: analysis/LSTM/hybrid_mmf/eval/full_2010_2026_hybrid_plot_eval.png
