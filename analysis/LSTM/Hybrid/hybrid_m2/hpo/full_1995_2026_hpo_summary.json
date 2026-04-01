@@ -1,0 +1,32 @@
+{
+  "period": "full_1995_2026",
+  "total_trials": 100,
+  "trials_model_a": 50,
+  "trials_model_b": 50,
+  "best_params_a": {
+    "hidden_dim": 64,
+    "num_layers": 1,
+    "dropout": 0.2,
+    "lr": 0.003,
+    "weight_decay": 1e-05,
+    "batch_size": 32,
+    "epochs": 50,
+    "patience": 6
+  },
+  "best_params_b": {
+    "hidden_dim": 32,
+    "num_layers": 1,
+    "dropout": 0.2,
+    "lr": 0.001,
+    "weight_decay": 1e-05,
+    "batch_size": 32,
+    "epochs": 50,
+    "patience": 6,
+    "cnn_filters": 16,
+    "kernel_size": 3
+  },
+  "best_val_rmse_scaled_a": 0.3610997591141487,
+  "best_val_rmse_scaled_b": 0.3613992343050567,
+  "trial_log_a": "analysis/LSTM/hybrid_m2/hpo/full_1995_2026_model_a_trials.csv",
+  "trial_log_b": "analysis/LSTM/hybrid_m2/hpo/full_1995_2026_model_b_trials.csv"
+}

@@ -13,7 +13,7 @@ from statsmodels.tsa.arima.model import ARIMA
 
 sys.path.append("/Applications/dollar_price")
 
-from analysis.LSTM.run_hybrid_periods import (
+from analysis.LSTM.Hybrid.run_hybrid_periods import (
     load_period_definition, DATA_PATH, OUTPUT_DIR, BASE_DIR,
     build_anomaly_concatenated, prepare_hybrid_data_for_period,
     ARIMA_LSTM_Model, ARIMA_CNN_LSTM_Model

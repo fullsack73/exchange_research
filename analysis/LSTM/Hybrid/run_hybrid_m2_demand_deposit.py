@@ -15,14 +15,13 @@ from sklearn.preprocessing import StandardScaler
 from statsmodels.tsa.arima.model import ARIMA
 from torch.utils.data import DataLoader, TensorDataset
 
-
 torch.manual_seed(42)
 np.random.seed(42)
 torch.set_num_threads(1)
 
 BASE_DIR = Path("/Applications/dollar_price")
-OUTPUT_DIR = BASE_DIR / "analysis" / "LSTM" / "hybrid_mmf"
-DATA_PATH = BASE_DIR / "analysis" / "LSTM" / "lstm_mmf" / "daily_dataset.csv"
+OUTPUT_DIR = BASE_DIR / "analysis" / "LSTM" / "Hybrid" / "hybrid_m2"
+DATA_PATH = BASE_DIR / "analysis" / "LSTM" / "Hybrid" / "hybrid_m2_demand_deposit" / "daily_dataset_m2_demand_deposit.csv"
 PERIOD_DEF_PATH = BASE_DIR / "analysis" / "anomaly" / "period_definition.json"
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -35,7 +34,6 @@ TRIALS_PER_MODEL = TOTAL_HPO_TRIALS // 2
 MAX_TUNE_TRAIN = 1200
 MAX_TUNE_VAL = 300
 
-
 def create_sequences(X: np.ndarray, y: np.ndarray, seq_len: int):
     xs, ys = [], []
     for i in range(len(X) - seq_len):
@@ -43,11 +41,9 @@ def create_sequences(X: np.ndarray, y: np.ndarray, seq_len: int):
         ys.append(y[i + seq_len])
     return np.array(xs), np.array(ys)
 
-
 def load_period_definition() -> dict:
     with open(PERIOD_DEF_PATH, "r", encoding="utf-8") as f:
         return json.load(f)
-
 
 def build_anomaly_concatenated(df: pd.DataFrame, period_def: dict) -> pd.DataFrame:
     blocks = period_def.get("anomaly_blocks_for_analysis", [])
@@ -69,10 +65,9 @@ def build_anomaly_concatenated(df: pd.DataFrame, period_def: dict) -> pd.DataFra
     out = pd.concat(rows, axis=0, ignore_index=True)
     return out.sort_values(["block_index", "observation_date"]).reset_index(drop=True)
 
-
 def prepare_hybrid_data_for_period(df_period: pd.DataFrame, seq_length: int = 10, test_ratio: float = 0.2):
     target_col = "USD_KRW"
-    feature_cols = ["MMF_total", "RATE_SPREAD_KOR_USA"]
+    feature_cols = ["M2_수시입출식저축성예금", "RATE_SPREAD_KOR_USA"]
 
     n_total = len(df_period)
     test_size = max(int(n_total * test_ratio), 40)
@@ -85,6 +80,7 @@ def prepare_hybrid_data_for_period(df_period: pd.DataFrame, seq_length: int = 10
     arima_result = arima_model.fit()
 
     df_period = df_period.copy()
+    df_period["Naive_pred"] = df_period[target_col].shift(1).bfill()
     res_full = arima_result.apply(df_period[target_col])
     df_period["ARIMA_pred"] = res_full.fittedvalues
     df_period["Residuals"] = df_period[target_col] - df_period["ARIMA_pred"]
@@ -133,7 +129,6 @@ def prepare_hybrid_data_for_period(df_period: pd.DataFrame, seq_length: int = 10
         "all_rows": len(df_period),
     }
 
-# --- 2. Model A: ARIMA-LSTM Hybrid ---
 class LSTM_Residual_Predictor(nn.Module):
     def __init__(self, input_dim, hidden_dim=32, num_layers=1, dropout=0.2):
         super(LSTM_Residual_Predictor, self).__init__()
@@ -155,7 +150,7 @@ class ARIMA_LSTM_Model:
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr, weight_decay=weight_decay)
         
     def fit(self, X_train, y_train, epochs=100, batch_size=32, patience=10):
-        val_size = max(int(len(X_train) * 0.1), 1) # At least 1 element
+        val_size = max(int(len(X_train) * 0.1), 1)
         X_t, y_t = torch.FloatTensor(X_train[:-val_size]), torch.FloatTensor(y_train[:-val_size])
         X_v, y_v = torch.FloatTensor(X_train[-val_size:]), torch.FloatTensor(y_train[-val_size:])
         
@@ -194,10 +189,7 @@ class ARIMA_LSTM_Model:
                 if patience_counter >= patience:
                     break
         self.model.load_state_dict(best_model_wts)
-        return {
-            "best_val_loss": float(best_loss),
-            "epochs_ran": int(epoch + 1),
-        }
+        return {"best_val_loss": float(best_loss), "epochs_ran": int(epoch + 1)}
         
     def predict(self, X_test):
         self.model.eval()
@@ -206,7 +198,6 @@ class ARIMA_LSTM_Model:
             preds = self.model(X_test_t).cpu().numpy()
         return preds
 
-# --- 3. Model B: ARIMA-CNN-LSTM Hybrid Architecture ---
 class CNN_LSTM_Residual_Predictor(nn.Module):
     def __init__(self, input_dim, cnn_filters=16, kernel_size=3, hidden_dim=32, num_layers=1, dropout=0.2):
         super(CNN_LSTM_Residual_Predictor, self).__init__()
@@ -231,13 +222,11 @@ class ARIMA_CNN_LSTM_Model(ARIMA_LSTM_Model):
         self.model = CNN_LSTM_Residual_Predictor(input_dim, cnn_filters, kernel_size, hidden_dim, num_layers, dropout).to(self.device)
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr, weight_decay=weight_decay)
 
-
 def split_train_val_timeseries(X: np.ndarray, y: np.ndarray, val_ratio: float = 0.1):
     val_n = max(int(len(X) * val_ratio), 40)
     val_n = min(val_n, max(len(X) - 40, 1))
     train_n = len(X) - val_n
     return X[:train_n], y[:train_n], X[train_n:], y[train_n:]
-
 
 def cap_tuning_sample(X_t: np.ndarray, y_t: np.ndarray, X_v: np.ndarray, y_v: np.ndarray):
     if len(X_t) > MAX_TUNE_TRAIN:
@@ -248,60 +237,67 @@ def cap_tuning_sample(X_t: np.ndarray, y_t: np.ndarray, X_v: np.ndarray, y_v: np
         y_v = y_v[-MAX_TUNE_VAL:]
     return X_t, y_t, X_v, y_v
 
-
 def evaluate_scaled_rmse_mae(y_true: np.ndarray, y_pred: np.ndarray):
     rmse = float(np.sqrt(mean_squared_error(y_true, y_pred)))
     mae = float(mean_absolute_error(y_true, y_pred))
     return rmse, mae
 
-
 def build_model_a_grid():
-    # 5 x 5 x 2 = 50 trials
     hidden_dims = [16, 32, 48, 64, 96]
     lrs = [0.0005, 0.001, 0.0015, 0.002, 0.003]
     dropouts = [0.1, 0.2]
     grid = []
     for hidden_dim, lr, dropout in itertools.product(hidden_dims, lrs, dropouts):
-        grid.append(
-            {
-                "hidden_dim": hidden_dim,
-                "num_layers": 1,
-                "dropout": dropout,
-                "lr": lr,
-                "weight_decay": 1e-5,
-                "batch_size": 32,
-                "epochs": 50,
-                "patience": 6,
-            }
-        )
+        grid.append({
+            "hidden_dim": hidden_dim,
+            "num_layers": 1,
+            "dropout": dropout,
+            "lr": lr,
+            "weight_decay": 1e-5,
+            "batch_size": 32,
+            "epochs": 50,
+            "patience": 6,
+        })
     return grid[:TRIALS_PER_MODEL]
 
-
 def build_model_b_grid():
-    # 2 x 5 x 5 = 50 trials
     hidden_dims = [16, 32]
     cnn_filters = [8, 12, 16, 20, 24]
     kernel_sizes = [3, 4, 5, 6, 7]
     grid = []
     for hidden_dim, cnn_filter, kernel_size in itertools.product(hidden_dims, cnn_filters, kernel_sizes):
-        grid.append(
-            {
-                "hidden_dim": hidden_dim,
-                "num_layers": 1,
-                "dropout": 0.2,
-                "lr": 0.001,
-                "weight_decay": 1e-5,
-                "batch_size": 32,
-                "epochs": 50,
-                "patience": 6,
-                "cnn_filters": cnn_filter,
-                "kernel_size": kernel_size,
-            }
-        )
+        grid.append({
+            "hidden_dim": hidden_dim,
+            "num_layers": 1,
+            "dropout": 0.2,
+            "lr": 0.001,
+            "weight_decay": 1e-5,
+            "batch_size": 32,
+            "epochs": 50,
+            "patience": 6,
+            "cnn_filters": cnn_filter,
+            "kernel_size": kernel_size,
+        })
     return grid[:TRIALS_PER_MODEL]
 
-
 def tune_model_a(period_name: str, X_train: np.ndarray, y_train: np.ndarray, input_dim: int):
+    trial_path = OUTPUT_DIR / "hpo" / f"{period_name}_model_a_trials.csv"
+    if trial_path.exists():
+        trials_df = pd.read_csv(trial_path)
+        best_idx = trials_df["val_rmse_scaled"].idxmin()
+        best_row = trials_df.loc[best_idx]
+        best_cfg = {
+            "hidden_dim": int(best_row["hidden_dim"]),
+            "num_layers": int(best_row["num_layers"]),
+            "dropout": float(best_row["dropout"]),
+            "lr": float(best_row["lr"]),
+            "weight_decay": float(best_row["weight_decay"]),
+            "batch_size": int(best_row["batch_size"]),
+            "epochs": int(best_row["epochs"]),
+            "patience": int(best_row["patience"]),
+        }
+        return best_cfg, trials_df.to_dict("records"), trial_path
+
     X_t, y_t, X_v, y_v = split_train_val_timeseries(X_train, y_train, val_ratio=0.1)
     X_t, y_t, X_v, y_v = cap_tuning_sample(X_t, y_t, X_v, y_v)
 
@@ -330,16 +326,11 @@ def tune_model_a(period_name: str, X_train: np.ndarray, y_train: np.ndarray, inp
         duration = time.time() - start
 
         record = {
-            "trial": idx,
-            "model": "A",
-            **cfg,
-            "train_rmse_scaled": train_rmse,
-            "train_mae_scaled": train_mae,
-            "val_rmse_scaled": val_rmse,
-            "val_mae_scaled": val_mae,
+            "trial": idx, "model": "A", **cfg,
+            "train_rmse_scaled": train_rmse, "train_mae_scaled": train_mae,
+            "val_rmse_scaled": val_rmse, "val_mae_scaled": val_mae,
             "generalization_gap_rmse": val_rmse - train_rmse,
-            "epochs_ran": fit_info["epochs_ran"],
-            "duration_sec": duration,
+            "epochs_ran": fit_info["epochs_ran"], "duration_sec": duration,
         }
         trials.append(record)
         if val_rmse < best_rmse:
@@ -350,8 +341,26 @@ def tune_model_a(period_name: str, X_train: np.ndarray, y_train: np.ndarray, inp
     pd.DataFrame(trials).to_csv(trial_path, index=False)
     return best_cfg, trials, trial_path
 
-
 def tune_model_b(period_name: str, X_train: np.ndarray, y_train: np.ndarray, input_dim: int):
+    trial_path = OUTPUT_DIR / "hpo" / f"{period_name}_model_b_trials.csv"
+    if trial_path.exists():
+        trials_df = pd.read_csv(trial_path)
+        best_idx = trials_df["val_rmse_scaled"].idxmin()
+        best_row = trials_df.loc[best_idx]
+        best_cfg = {
+            "hidden_dim": int(best_row["hidden_dim"]),
+            "num_layers": int(best_row["num_layers"]),
+            "dropout": float(best_row["dropout"]),
+            "lr": float(best_row["lr"]),
+            "weight_decay": float(best_row["weight_decay"]),
+            "batch_size": int(best_row["batch_size"]),
+            "epochs": int(best_row["epochs"]),
+            "patience": int(best_row["patience"]),
+            "cnn_filters": int(best_row["cnn_filters"]),
+            "kernel_size": int(best_row["kernel_size"]),
+        }
+        return best_cfg, trials_df.to_dict("records"), trial_path
+
     X_t, y_t, X_v, y_v = split_train_val_timeseries(X_train, y_train, val_ratio=0.1)
     X_t, y_t, X_v, y_v = cap_tuning_sample(X_t, y_t, X_v, y_v)
 
@@ -382,16 +391,11 @@ def tune_model_b(period_name: str, X_train: np.ndarray, y_train: np.ndarray, inp
         duration = time.time() - start
 
         record = {
-            "trial": idx,
-            "model": "B",
-            **cfg,
-            "train_rmse_scaled": train_rmse,
-            "train_mae_scaled": train_mae,
-            "val_rmse_scaled": val_rmse,
-            "val_mae_scaled": val_mae,
+            "trial": idx, "model": "B", **cfg,
+            "train_rmse_scaled": train_rmse, "train_mae_scaled": train_mae,
+            "val_rmse_scaled": val_rmse, "val_mae_scaled": val_mae,
             "generalization_gap_rmse": val_rmse - train_rmse,
-            "epochs_ran": fit_info["epochs_ran"],
-            "duration_sec": duration,
+            "epochs_ran": fit_info["epochs_ran"], "duration_sec": duration,
         }
         trials.append(record)
         if val_rmse < best_rmse:
@@ -403,26 +407,23 @@ def tune_model_b(period_name: str, X_train: np.ndarray, y_train: np.ndarray, inp
     return best_cfg, trials, trial_path
 
 def build_eval_predictions(test_df: pd.DataFrame, pred_a: np.ndarray, pred_b: np.ndarray) -> pd.DataFrame:
-    out = pd.DataFrame(
-        {
-            "date": pd.to_datetime(test_df["observation_date"]).values,
-            "actual_fx": test_df["USD_KRW"].values,
-            "pred_arima": test_df["ARIMA_pred"].values,
-            "pred_model_a": pred_a,
-            "pred_model_b": pred_b,
-        }
-    )
+    out = pd.DataFrame({
+        "date": pd.to_datetime(test_df["observation_date"]).values,
+        "actual_fx": test_df["USD_KRW"].values,
+        "pred_naive": test_df["Naive_pred"].values,
+        "pred_model_a": pred_a,
+        "pred_model_b": pred_b,
+    })
     for c in ["block_index", "block_start", "block_end"]:
         if c in test_df.columns:
             out[c] = test_df[c].values
     return out
 
-
 def plot_full_regular(period_name: str, df_period: pd.DataFrame, pred_df: pd.DataFrame) -> Path:
     out_path = OUTPUT_DIR / "full" / f"{period_name}_hybrid_plot_full.png"
     fig, ax = plt.subplots(figsize=(15, 6))
     ax.plot(df_period["observation_date"], df_period["USD_KRW"], color="black", linewidth=1.4, label="Actual USD/KRW")
-    ax.plot(pred_df["date"], pred_df["pred_arima"], color="grey", linestyle="--", alpha=0.8, label="ARIMA Baseline")
+    ax.plot(pred_df["date"], pred_df["pred_naive"], color="grey", linestyle="--", alpha=0.8, label="Naive Baseline")
     ax.plot(pred_df["date"], pred_df["pred_model_a"], color="#1f77b4", alpha=0.9, label="Model A (ARIMA-LSTM)")
     ax.plot(pred_df["date"], pred_df["pred_model_b"], color="#d62728", alpha=0.9, label="Model B (ARIMA-CNN-LSTM)")
     ax.set_title(f"{period_name}: Full Range (1995-2026)")
@@ -435,12 +436,11 @@ def plot_full_regular(period_name: str, df_period: pd.DataFrame, pred_df: pd.Dat
     plt.close(fig)
     return out_path
 
-
 def plot_eval_regular(period_name: str, pred_df: pd.DataFrame) -> Path:
     out_path = OUTPUT_DIR / "eval" / f"{period_name}_hybrid_plot_eval.png"
     fig, ax = plt.subplots(figsize=(15, 6))
     ax.plot(pred_df["date"], pred_df["actual_fx"], color="black", linewidth=1.6, label="Actual USD/KRW")
-    ax.plot(pred_df["date"], pred_df["pred_arima"], color="grey", linestyle="--", alpha=0.8, label="ARIMA Baseline")
+    ax.plot(pred_df["date"], pred_df["pred_naive"], color="grey", linestyle="--", alpha=0.8, label="Naive Baseline")
     ax.plot(pred_df["date"], pred_df["pred_model_a"], color="#1f77b4", alpha=0.9, label="Model A (ARIMA-LSTM)")
     ax.plot(pred_df["date"], pred_df["pred_model_b"], color="#d62728", alpha=0.9, label="Model B (ARIMA-CNN-LSTM)")
     ax.set_title(f"{period_name}: Test/Eval Range")
@@ -452,7 +452,6 @@ def plot_eval_regular(period_name: str, pred_df: pd.DataFrame) -> Path:
     fig.savefig(out_path, dpi=140)
     plt.close(fig)
     return out_path
-
 
 def plot_anomaly_block_full(pred_df: pd.DataFrame, period_name: str) -> Path:
     out_path = OUTPUT_DIR / "full" / f"{period_name}_hybrid_plot_full.png"
@@ -481,7 +480,6 @@ def plot_anomaly_block_full(pred_df: pd.DataFrame, period_name: str) -> Path:
     fig.savefig(out_path, dpi=140)
     plt.close(fig)
     return out_path
-
 
 def plot_anomaly_block_eval(pred_df: pd.DataFrame, period_name: str) -> Path:
     out_path = OUTPUT_DIR / "eval" / f"{period_name}_hybrid_plot_eval.png"
@@ -513,9 +511,8 @@ def plot_anomaly_block_eval(pred_df: pd.DataFrame, period_name: str) -> Path:
     plt.close(fig)
     return out_path
 
-
 def run_period(period_name: str, period_df: pd.DataFrame, is_anomaly_blocks: bool = False):
-    print(f"\\n[{period_name}] Processing Period")
+    print(f"\n[{period_name}] Processing Period")
     seq_length = 10
     prepared = prepare_hybrid_data_for_period(period_df, seq_length=seq_length, test_ratio=0.2)
 
@@ -546,13 +543,7 @@ def run_period(period_name: str, period_df: pd.DataFrame, is_anomaly_blocks: boo
         lr=best_a_cfg["lr"],
         weight_decay=best_a_cfg["weight_decay"],
     )
-    model_A.fit(
-        X_train,
-        y_train,
-        epochs=best_a_cfg["epochs"],
-        batch_size=best_a_cfg["batch_size"],
-        patience=best_a_cfg["patience"],
-    )
+    model_A.fit(X_train, y_train, epochs=best_a_cfg["epochs"], batch_size=best_a_cfg["batch_size"], patience=best_a_cfg["patience"])
     pred_a_scaled = model_A.predict(X_test)
     pred_a_resid = scaler_y.inverse_transform(pred_a_scaled).flatten()
 
@@ -567,13 +558,7 @@ def run_period(period_name: str, period_df: pd.DataFrame, is_anomaly_blocks: boo
         lr=best_b_cfg["lr"],
         weight_decay=best_b_cfg["weight_decay"],
     )
-    model_B.fit(
-        X_train,
-        y_train,
-        epochs=best_b_cfg["epochs"],
-        batch_size=best_b_cfg["batch_size"],
-        patience=best_b_cfg["patience"],
-    )
+    model_B.fit(X_train, y_train, epochs=best_b_cfg["epochs"], batch_size=best_b_cfg["batch_size"], patience=best_b_cfg["patience"])
     pred_b_scaled = model_B.predict(X_test)
     pred_b_resid = scaler_y.inverse_transform(pred_b_scaled).flatten()
 
@@ -583,6 +568,7 @@ def run_period(period_name: str, period_df: pd.DataFrame, is_anomaly_blocks: boo
     pred_b_full_resid = scaler_y.inverse_transform(pred_b_full_scaled).flatten()
 
     test_arima = test_df["ARIMA_pred"].values
+    test_naive = test_df["Naive_pred"].values
     actual = test_df["USD_KRW"].values
     final_a = test_arima + pred_a_resid
     final_b = test_arima + pred_b_resid
@@ -592,7 +578,7 @@ def run_period(period_name: str, period_df: pd.DataFrame, is_anomaly_blocks: boo
     full_final_a = full_arima + pred_a_full_resid
     full_final_b = full_arima + pred_b_full_resid
 
-    rmse_base = float(np.sqrt(mean_squared_error(actual, test_arima)))
+    rmse_base = float(np.sqrt(mean_squared_error(actual, test_naive)))
     rmse_a = float(np.sqrt(mean_squared_error(actual, final_a)))
     rmse_b = float(np.sqrt(mean_squared_error(actual, final_b)))
     mae_a = float(mean_absolute_error(actual, final_a))
@@ -612,19 +598,34 @@ def run_period(period_name: str, period_df: pd.DataFrame, is_anomaly_blocks: boo
         for bid, blk in pred_df_full.groupby("block_index", sort=True):
             if len(blk) < 2:
                 continue
-            by_block.append(
-                {
-                    "block_index": int(bid),
-                    "rows": int(len(blk)),
-                    "start": str(pd.to_datetime(blk["date"]).min().date()),
-                    "end": str(pd.to_datetime(blk["date"]).max().date()),
-                    "rmse_model_a": float(np.sqrt(mean_squared_error(blk["actual_fx"], blk["pred_model_a"]))),
-                    "rmse_model_b": float(np.sqrt(mean_squared_error(blk["actual_fx"], blk["pred_model_b"]))),
-                    "mae_model_a": float(mean_absolute_error(blk["actual_fx"], blk["pred_model_a"])),
-                    "mae_model_b": float(mean_absolute_error(blk["actual_fx"], blk["pred_model_b"])),
-                }
-            )
+            by_block.append({
+                "block_index": int(bid),
+                "rows": int(len(blk)),
+                "start": str(pd.to_datetime(blk["date"]).min().date()),
+                "end": str(pd.to_datetime(blk["date"]).max().date()),
+                "rmse_model_a": float(np.sqrt(mean_squared_error(blk["actual_fx"], blk["pred_model_a"]))),
+                "rmse_model_b": float(np.sqrt(mean_squared_error(blk["actual_fx"], blk["pred_model_b"]))),
+                "mae_model_a": float(mean_absolute_error(blk["actual_fx"], blk["pred_model_a"])),
+                "mae_model_b": float(mean_absolute_error(blk["actual_fx"], blk["pred_model_b"])),
+            })
         pd.DataFrame(by_block).to_csv(OUTPUT_DIR / "eval" / "block_metrics.csv", index=False)
+
+        slice_df = pred_df_full[(pd.to_datetime(pred_df_full["date"]) >= "2024-11-30") & (pd.to_datetime(pred_df_full["date"]) <= "2026-03-01")]
+        if not slice_df.empty:
+            slice_path = OUTPUT_DIR / "eval" / "anomaly_2024_11_to_2026_03_hybrid_plot_eval.png"
+            fig, ax = plt.subplots(figsize=(15, 6))
+            ax.plot(slice_df["date"], slice_df["actual_fx"], color="black", linewidth=2.0, alpha=0.65, label="Actual FX")
+            ax.plot(slice_df["date"], slice_df["pred_naive"], color="grey", linestyle="--", alpha=0.8, label="Naive Baseline")
+            ax.plot(slice_df["date"], slice_df["pred_model_a"], color="#1f77b4", linewidth=1.4, alpha=0.85, label="Model A")
+            ax.plot(slice_df["date"], slice_df["pred_model_b"], color="#d62728", linewidth=1.4, alpha=0.85, label="Model B")
+            ax.set_title("Anomaly Subset: 2024-11-30 to 2026-03-01")
+            ax.set_xlabel("Date")
+            ax.set_ylabel("USD/KRW")
+            ax.grid(alpha=0.25)
+            ax.legend(loc="best")
+            fig.tight_layout()
+            fig.savefig(slice_path, dpi=140)
+            plt.close(fig)
     else:
         plot_full_path = plot_full_regular(period_name, period_df, pred_df_full)
         plot_eval_path = plot_eval_regular(period_name, pred_df)
@@ -688,7 +689,7 @@ def main():
         json.dump(results, f, indent=2, ensure_ascii=False)
 
     lines = [
-        "Hybrid ARIMA-LSTM vs ARIMA-CNN-LSTM",
+        "Hybrid M2 ARIMA-LSTM vs ARIMA-CNN-LSTM",
         f"Data range: {range_start.date()} to {range_end.date()}",
         "Anomaly definition: period_definition.json -> anomaly_blocks_for_analysis",
         "",

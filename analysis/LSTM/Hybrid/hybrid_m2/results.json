@@ -1,0 +1,76 @@
+[
+  {
+    "period": "full_1995_2026",
+    "rows": 7917,
+    "train_rows": 6333,
+    "test_rows": 1584,
+    "rmse_base_arima": 6.754750479507294,
+    "rmse_model_a": 6.868168621322237,
+    "rmse_model_b": 6.912427225942638,
+    "mae_model_a": 4.920941438053748,
+    "mae_model_b": 4.912466554895678,
+    "better_model": "A",
+    "best_params_a": {
+      "hidden_dim": 64,
+      "num_layers": 1,
+      "dropout": 0.2,
+      "lr": 0.003,
+      "weight_decay": 1e-05,
+      "batch_size": 32,
+      "epochs": 50,
+      "patience": 6
+    },
+    "best_params_b": {
+      "hidden_dim": 32,
+      "num_layers": 1,
+      "dropout": 0.2,
+      "lr": 0.001,
+      "weight_decay": 1e-05,
+      "batch_size": 32,
+      "epochs": 50,
+      "patience": 6,
+      "cnn_filters": 16,
+      "kernel_size": 3
+    },
+    "hpo_summary": "analysis/LSTM/hybrid_m2/hpo/full_1995_2026_hpo_summary.json",
+    "plot_full": "analysis/LSTM/hybrid_m2/full/full_1995_2026_hybrid_plot_full.png",
+    "plot_eval": "analysis/LSTM/hybrid_m2/eval/full_1995_2026_hybrid_plot_eval.png"
+  },
+  {
+    "period": "anomaly_concatenated_blocks",
+    "rows": 2463,
+    "train_rows": 1970,
+    "test_rows": 493,
+    "rmse_base_arima": 12.930136818064774,
+    "rmse_model_a": 13.098208451521318,
+    "rmse_model_b": 12.993447674977379,
+    "mae_model_a": 7.462918722363923,
+    "mae_model_b": 7.266016192547348,
+    "better_model": "B",
+    "best_params_a": {
+      "hidden_dim": 16,
+      "num_layers": 1,
+      "dropout": 0.2,
+      "lr": 0.0015,
+      "weight_decay": 1e-05,
+      "batch_size": 32,
+      "epochs": 50,
+      "patience": 6
+    },
+    "best_params_b": {
+      "hidden_dim": 16,
+      "num_layers": 1,
+      "dropout": 0.2,
+      "lr": 0.001,
+      "weight_decay": 1e-05,
+      "batch_size": 32,
+      "epochs": 50,
+      "patience": 6,
+      "cnn_filters": 12,
+      "kernel_size": 7
+    },
+    "hpo_summary": "analysis/LSTM/hybrid_m2/hpo/anomaly_concatenated_blocks_hpo_summary.json",
+    "plot_full": "analysis/LSTM/hybrid_m2/full/anomaly_concatenated_blocks_hybrid_plot_full.png",
+    "plot_eval": "analysis/LSTM/hybrid_m2/eval/anomaly_concatenated_blocks_hybrid_plot_eval.png"
+  }
+]

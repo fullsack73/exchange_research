@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 BASE_DIR = Path("/Applications/dollar_price")
-LSTM_DIR = BASE_DIR / "analysis" / "LSTM"
+LSTM_DIR = BASE_DIR / "analysis" / "LSTM" / "Hybrid"
 
 MODELS = [
     {
