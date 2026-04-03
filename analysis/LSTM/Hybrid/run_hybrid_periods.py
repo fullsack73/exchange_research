@@ -22,7 +22,7 @@ torch.set_num_threads(1)
 
 BASE_DIR = Path("/Applications/dollar_price")
 OUTPUT_DIR = BASE_DIR / "analysis" / "LSTM" / "Hybrid" / "hybrid_mmf"
-DATA_PATH = BASE_DIR / "analysis" / "LSTM" / "Hybrid" / "hybrid_mmf" / "daily_dataset.csv"
+DATA_PATH = BASE_DIR / "analysis" / "LSTM" / "lstm_mmf" / "daily_dataset.csv"
 PERIOD_DEF_PATH = BASE_DIR / "analysis" / "anomaly" / "period_definition.json"
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)

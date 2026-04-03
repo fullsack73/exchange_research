@@ -13,11 +13,20 @@ from statsmodels.tsa.arima.model import ARIMA
 
 sys.path.append("/Applications/dollar_price")
 
-from analysis.LSTM.Hybrid.run_hybrid_periods import (
-    load_period_definition, DATA_PATH, OUTPUT_DIR, BASE_DIR,
-    build_anomaly_concatenated, prepare_hybrid_data_for_period,
-    ARIMA_LSTM_Model, ARIMA_CNN_LSTM_Model
-)
+target_type = sys.argv[1] if len(sys.argv) > 1 else 'mmf'
+
+if target_type == 'm2':
+    from analysis.LSTM.Hybrid.run_hybrid_m2_demand_deposit import (
+        load_period_definition, DATA_PATH, OUTPUT_DIR, BASE_DIR,
+        build_anomaly_concatenated, prepare_hybrid_data_for_period,
+        ARIMA_LSTM_Model, ARIMA_CNN_LSTM_Model
+    )
+else:
+    from analysis.LSTM.Hybrid.run_hybrid_periods import (
+        load_period_definition, DATA_PATH, OUTPUT_DIR, BASE_DIR,
+        build_anomaly_concatenated, prepare_hybrid_data_for_period,
+        ARIMA_LSTM_Model, ARIMA_CNN_LSTM_Model
+    )
 
 def evaluate_metrics(y_true, y_pred, name="Model"):
     rmse = float(np.sqrt(mean_squared_error(y_true, y_pred)))

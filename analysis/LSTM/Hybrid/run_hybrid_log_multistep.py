@@ -19,10 +19,18 @@ torch.manual_seed(42)
 np.random.seed(42)
 torch.set_num_threads(1)
 
+import sys
+target_type = sys.argv[1] if len(sys.argv) > 1 else "mmf"
+
 BASE_DIR = Path("/Applications/dollar_price")
-OUTPUT_DIR = BASE_DIR / "analysis" / "LSTM" / "Hybrid" / "log_multistep"
-DATA_PATH = BASE_DIR / "analysis" / "LSTM" / "Hybrid" / "hybrid_mmf" / "daily_dataset.csv"
 PERIOD_DEF_PATH = BASE_DIR / "analysis" / "anomaly" / "period_definition.json"
+
+if target_type == "m2":
+    OUTPUT_DIR = BASE_DIR / "analysis" / "LSTM" / "Hybrid" / "log_multistep_m2"
+    DATA_PATH = BASE_DIR / "analysis" / "LSTM" / "lstm_m2_demand_deposit" / "daily_dataset_m2_demand_deposit.csv"
+else:
+    OUTPUT_DIR = BASE_DIR / "analysis" / "LSTM" / "Hybrid" / "log_multistep_mmf"
+    DATA_PATH = BASE_DIR / "analysis" / "LSTM" / "lstm_mmf" / "daily_dataset.csv"
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR / "full", exist_ok=True)
@@ -70,7 +78,7 @@ def build_anomaly_concatenated(df: pd.DataFrame, period_def: dict) -> pd.DataFra
 
 def prepare_log_data_for_period(df_period: pd.DataFrame, seq_length: int = 10, horizon: int = 5, test_ratio: float = 0.2):
     target_col = "USD_KRW"
-    feature_cols = ["MMF_total", "RATE_SPREAD_KOR_USA"]
+    feature_cols = ["M2_수시입출식저축성예금", "RATE_SPREAD_KOR_USA"] if target_type == "m2" else ["MMF_total", "RATE_SPREAD_KOR_USA"]
 
     df_period = df_period.copy()
     
