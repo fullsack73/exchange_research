@@ -1,0 +1,17 @@
+Hybrid M2 Multi-Step (Log Return) ARIMA-LSTM vs ARIMA-CNN-LSTM
+Data range: 1995-01-01 to 2026-03-20
+Anomaly definition: period_definition.json -> anomaly_blocks_for_analysis
+
+[full_1995_2026]
+Model A (LSTM) Avg 5-Day RMSE: 7.8805
+Model B (CNN-LSTM) Avg 5-Day RMSE: 8.0144
+Naive Baseline Avg 5-Day RMSE: 8.3255
+Plot: analysis/LSTM/Hybrid/log_multistep_m2/eval/full_1995_2026_5_day_forecast_samples.png
+Better model: A
+
+[anomaly_concatenated_blocks]
+Model A (LSTM) Avg 5-Day RMSE: 9.7731
+Model B (CNN-LSTM) Avg 5-Day RMSE: 12.3031
+Naive Baseline Avg 5-Day RMSE: 9.8297
+Plot: analysis/LSTM/Hybrid/log_multistep_m2/eval/anomaly_concatenated_blocks_5_day_forecast_samples.png
+Better model: A

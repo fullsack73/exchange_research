@@ -384,7 +384,38 @@ def main():
 
     print("Running Multi-Step Log Return Models...")
     res_full = run_period("full_1995_2026", df_full)
+    res_full["period"] = "full_1995_2026"
+
     res_anomaly = run_period("anomaly_concatenated_blocks", df_anomaly_concat)
+    res_anomaly["period"] = "anomaly_concatenated_blocks"
+
+    results_data = [res_full, res_anomaly]
+
+    with open(OUTPUT_DIR / "results.json", "w", encoding="utf-8") as f:
+        json.dump(results_data, f, indent=2, ensure_ascii=False)
+
+    lines = [
+        f"Hybrid {target_type.upper()} Multi-Step (Log Return) ARIMA-LSTM vs ARIMA-CNN-LSTM",
+        f"Data range: {range_start.date()} to {range_end.date()}",
+        "Anomaly definition: period_definition.json -> anomaly_blocks_for_analysis",
+        "",
+    ]
+    for r in results_data:
+        lines.append(f"[{r['period']}]")
+        lines.append(f"Model A (LSTM) Avg 5-Day RMSE: {r['rmse_a']:.4f}")
+        lines.append(f"Model B (CNN-LSTM) Avg 5-Day RMSE: {r['rmse_b']:.4f}")
+        lines.append(f"Naive Baseline Avg 5-Day RMSE: {r['rmse_naive']:.4f}")
+        lines.append(f"Plot: {r['plot']}")
+
+        better = "A" if r['rmse_a'] < r['rmse_b'] else "B"
+        if r['rmse_naive'] < min(r['rmse_a'], r['rmse_b']):
+            better = "Naive"
+        lines.append(f"Better model: {better}")
+        lines.append("")
+
+    with open(OUTPUT_DIR / "results.txt", "w", encoding="utf-8") as f:
+        f.write("\n".join(lines))
+
     print("\nDONE.")
 
 if __name__ == "__main__":

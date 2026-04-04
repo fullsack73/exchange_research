@@ -1,0 +1,16 @@
+[
+  {
+    "rmse_a": 7.6502820922646375,
+    "rmse_b": 7.764394879936299,
+    "rmse_naive": 8.325501041235478,
+    "plot": "analysis/LSTM/Hybrid/log_multistep_mmf/eval/full_1995_2026_5_day_forecast_samples.png",
+    "period": "full_1995_2026"
+  },
+  {
+    "rmse_a": 10.594753109041289,
+    "rmse_b": 10.236734393649217,
+    "rmse_naive": 9.829722287224863,
+    "plot": "analysis/LSTM/Hybrid/log_multistep_mmf/eval/anomaly_concatenated_blocks_5_day_forecast_samples.png",
+    "period": "anomaly_concatenated_blocks"
+  }
+]
