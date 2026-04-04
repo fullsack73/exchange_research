@@ -27,6 +27,6 @@
   },
   "best_val_rmse_scaled_a": 0.3781162875849645,
   "best_val_rmse_scaled_b": 0.3762146670137518,
-  "trial_log_a": "analysis/LSTM/hybrid_m2/hpo/anomaly_concatenated_blocks_model_a_trials.csv",
-  "trial_log_b": "analysis/LSTM/hybrid_m2/hpo/anomaly_concatenated_blocks_model_b_trials.csv"
+  "trial_log_a": "analysis/LSTM/Hybrid/hybrid_m2/hpo/anomaly_concatenated_blocks_model_a_trials.csv",
+  "trial_log_b": "analysis/LSTM/Hybrid/hybrid_m2/hpo/anomaly_concatenated_blocks_model_b_trials.csv"
 }

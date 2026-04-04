@@ -9,7 +9,7 @@ from pathlib import Path
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 from statsmodels.stats.diagnostic import acorr_ljungbox
 from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
-from statsmodels.tsa.arima.model import ARIMA
+from statsmodels.tsa.statespace.sarimax import SARIMAX
 
 sys.path.append("/Applications/dollar_price")
 
@@ -215,7 +215,7 @@ def verify_period(period_name, period_df):
     
     # Needs a 30-day TRUE ARIMA forecast starting from train data end
     train_ts = prepared["df_ready"]["USD_KRW"].iloc[:prepared["train_rows"]]
-    arima_fit = ARIMA(train_ts, order=(1,1,1)).fit()
+    arima_fit = SARIMAX(train_ts, order=(1,1,1), seasonal_order=(0,0,0,0)).fit(disp=False)
     arima_30 = arima_fit.forecast(steps=steps_to_forecast).values
     actual_30 = actual[:steps_to_forecast]
 

@@ -22,11 +22,11 @@
     "batch_size": 32,
     "epochs": 50,
     "patience": 6,
-    "cnn_filters": 16,
-    "kernel_size": 3
+    "cnn_filters": 8,
+    "kernel_size": 4
   },
   "best_val_rmse_scaled_a": 0.3607431262408639,
-  "best_val_rmse_scaled_b": 0.3609938226604867,
-  "trial_log_a": "analysis/LSTM/hybrid_mmf/hpo/full_1995_2026_model_a_trials.csv",
-  "trial_log_b": "analysis/LSTM/hybrid_mmf/hpo/full_1995_2026_model_b_trials.csv"
+  "best_val_rmse_scaled_b": 0.36467613038267965,
+  "trial_log_a": "analysis/LSTM/Hybrid/hybrid_mmf/hpo/full_1995_2026_model_a_trials.csv",
+  "trial_log_b": "analysis/LSTM/Hybrid/hybrid_mmf/hpo/full_1995_2026_model_b_trials.csv"
 }

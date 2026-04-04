@@ -27,6 +27,6 @@
   },
   "best_val_rmse_scaled_a": 0.3610997591141487,
   "best_val_rmse_scaled_b": 0.3613992343050567,
-  "trial_log_a": "analysis/LSTM/hybrid_m2/hpo/full_1995_2026_model_a_trials.csv",
-  "trial_log_b": "analysis/LSTM/hybrid_m2/hpo/full_1995_2026_model_b_trials.csv"
+  "trial_log_a": "analysis/LSTM/Hybrid/hybrid_m2/hpo/full_1995_2026_model_a_trials.csv",
+  "trial_log_b": "analysis/LSTM/Hybrid/hybrid_m2/hpo/full_1995_2026_model_b_trials.csv"
 }

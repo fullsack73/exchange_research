@@ -12,7 +12,7 @@ import torch
 import torch.nn as nn
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 from sklearn.preprocessing import StandardScaler
-from statsmodels.tsa.arima.model import ARIMA
+from statsmodels.tsa.statespace.sarimax import SARIMAX
 from torch.utils.data import DataLoader, TensorDataset
 
 torch.manual_seed(42)
@@ -76,7 +76,7 @@ def build_anomaly_concatenated(df: pd.DataFrame, period_def: dict) -> pd.DataFra
     return out.sort_values(["block_index", "observation_date"]).reset_index(drop=True)
 
 
-def prepare_log_data_for_period(df_period: pd.DataFrame, seq_length: int = 10, horizon: int = 5, test_ratio: float = 0.2):
+def prepare_log_data_for_period(df_period: pd.DataFrame, seq_length: int = 10, horizon: int = 5, test_ratio: float = 0.2, seasonal_order=(0, 0, 0, 0)):
     target_col = "USD_KRW"
     feature_cols = ["M2_수시입출식저축성예금", "RATE_SPREAD_KOR_USA"] if target_type == "m2" else ["MMF_total", "RATE_SPREAD_KOR_USA"]
 
@@ -91,10 +91,10 @@ def prepare_log_data_for_period(df_period: pd.DataFrame, seq_length: int = 10, h
     test_size = max(int(n_total * test_ratio), 40)
     train_size = n_total - test_size
 
-    # Fit ARIMA(1,0,1) on Log_Return (since it's already stationary)
+    # Fit SARIMAX(1,0,1) on Log_Return (since it's already stationary)
     train_ts = df_period["Log_Return"].iloc[:train_size]
-    arima_model = ARIMA(train_ts, order=(1, 0, 1))
-    arima_result = arima_model.fit()
+    arima_model = SARIMAX(train_ts, order=(1, 0, 1), seasonal_order=seasonal_order)
+    arima_result = arima_model.fit(disp=False)
 
     res_full = arima_result.apply(df_period["Log_Return"])
     df_period["ARIMA_Log_pred"] = res_full.fittedvalues
@@ -151,16 +151,19 @@ class CNN_LSTM_Multi_Step(nn.Module):
         super().__init__()
         self.conv1d = nn.Conv1d(in_channels=input_dim, out_channels=cnn_filters, kernel_size=kernel_size, padding=kernel_size//2)
         self.relu = nn.ReLU()
-        self.lstm = nn.LSTM(cnn_filters, hidden_dim, num_layers, batch_first=True, dropout=dropout if num_layers > 1 else 0)
+        self.lstm = nn.LSTM(input_dim, hidden_dim, num_layers, batch_first=True, dropout=dropout if num_layers > 1 else 0)
         self.dropout = nn.Dropout(dropout)
-        self.fc = nn.Linear(hidden_dim, horizon)
+        self.fc = nn.Linear(hidden_dim + cnn_filters, horizon)
     def forward(self, x):
-        x = x.transpose(1, 2)
-        c_out = self.relu(self.conv1d(x))
-        c_out = c_out.transpose(1, 2)
-        lstm_out, _ = self.lstm(c_out)
-        out = self.dropout(lstm_out[:, -1, :])
-        out = self.fc(out)
+        lstm_out, _ = self.lstm(x)
+        lstm_feat = self.dropout(lstm_out[:, -1, :])
+
+        x_cnn = x.transpose(1, 2)
+        c_out = self.relu(self.conv1d(x_cnn))
+        cnn_feat = c_out.mean(dim=-1)
+
+        combined = torch.cat((lstm_feat, cnn_feat), dim=1)
+        out = self.fc(combined)
         return out
 
 

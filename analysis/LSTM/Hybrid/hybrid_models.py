@@ -7,14 +7,14 @@ import torch.nn as nn
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 import matplotlib.pyplot as plt
-from statsmodels.tsa.arima.model import ARIMA
+from statsmodels.tsa.statespace.sarimax import SARIMAX
 from torch.utils.data import DataLoader, TensorDataset
 
 torch.manual_seed(42)
 np.random.seed(42)
 
 # --- 1. Data Preprocessing Utility ---
-def prepare_hybrid_data(data_path, seq_length=10, test_size=200):
+def prepare_hybrid_data(data_path, seq_length=10, test_size=200, seasonal_order=(0, 0, 0, 0)):
     df = pd.read_csv(data_path)
     df['observation_date'] = pd.to_datetime(df['observation_date'])
     df = df.sort_values('observation_date').reset_index(drop=True)
@@ -24,9 +24,9 @@ def prepare_hybrid_data(data_path, seq_length=10, test_size=200):
     feature_cols = ['MMF_total', 'RATE_SPREAD_KOR_USA']
     
     train_ts = df[target_col].iloc[:-test_size]
-    # Simple ARIMA (1, 1, 1) for baseline trend extraction
-    arima_model = ARIMA(train_ts, order=(1, 1, 1))
-    arima_result = arima_model.fit()
+    # Simple SARIMAX (1, 1, 1) for baseline trend extraction
+    arima_model = SARIMAX(train_ts, order=(1, 1, 1), seasonal_order=seasonal_order)
+    arima_result = arima_model.fit(disp=False)
     
     # Get 1-step ahead predictions for the whole series to avoid data leakage 
     # (using the parameters fitted on train)
@@ -152,20 +152,26 @@ class CNN_LSTM_Residual_Predictor(nn.Module):
         # Conv1D expects (batch, channels, length)
         self.conv1d = nn.Conv1d(in_channels=input_dim, out_channels=cnn_filters, kernel_size=kernel_size, padding=kernel_size//2)
         self.relu = nn.ReLU()
-        # After Conv1D: (batch, cnn_filters, length). Transpose back to (batch, length, cnn_filters) for LSTM
-        self.lstm = nn.LSTM(cnn_filters, hidden_dim, num_layers, batch_first=True, dropout=dropout if num_layers > 1 else 0)
+        # LSTM branch
+        self.lstm = nn.LSTM(input_dim, hidden_dim, num_layers, batch_first=True, dropout=dropout if num_layers > 1 else 0)
         self.dropout = nn.Dropout(dropout)
-        self.fc = nn.Linear(hidden_dim, 1)
-        
+        self.fc = nn.Linear(hidden_dim + cnn_filters, 1)
+
     def forward(self, x):
+        # LSTM branch
+        lstm_out, _ = self.lstm(x)
+        lstm_feat = self.dropout(lstm_out[:, -1, :])
+
+        # CNN branch
         # x: (batch, seq_len, input_dim) -> (batch, input_dim, seq_len)
-        x = x.transpose(1, 2)
-        c_out = self.relu(self.conv1d(x))
-        # c_out: (batch, filters, seq_len) -> (batch, seq_len, filters)
-        c_out = c_out.transpose(1, 2)
-        lstm_out, _ = self.lstm(c_out)
-        out = self.dropout(lstm_out[:, -1, :])
-        out = self.fc(out)
+        x_cnn = x.transpose(1, 2)
+        c_out = self.relu(self.conv1d(x_cnn))
+        # Global Average Pooling: (batch, cnn_filters, seq_len) -> (batch, cnn_filters)
+        cnn_feat = c_out.mean(dim=-1)
+
+        # Ensemble
+        combined = torch.cat((lstm_feat, cnn_feat), dim=1)
+        out = self.fc(combined)
         return out
 
 class ARIMA_CNN_LSTM_Model(ARIMA_LSTM_Model):
