@@ -6,6 +6,8 @@ import time
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+from matplotlib.ticker import MaxNLocator
 import numpy as np
 import pandas as pd
 import torch
@@ -18,6 +20,24 @@ from torch.utils.data import DataLoader, TensorDataset
 torch.manual_seed(42)
 np.random.seed(42)
 torch.set_num_threads(1)
+
+plt.style.use("seaborn-v0_8-whitegrid")
+plt.rcParams.update({
+    "figure.facecolor": "white",
+    "axes.facecolor": "#fcfcfc",
+    "axes.edgecolor": "#d0d0d0",
+    "axes.linewidth": 0.8,
+    "grid.color": "#d9d9d9",
+    "grid.linestyle": "--",
+    "grid.linewidth": 0.6,
+    "grid.alpha": 0.55,
+    "font.size": 11,
+    "axes.titlesize": 15,
+    "axes.labelsize": 11,
+    "legend.fontsize": 10,
+    "xtick.labelsize": 10,
+    "ytick.labelsize": 10,
+})
 
 import sys
 target_type = sys.argv[1] if len(sys.argv) > 1 else "mmf"
@@ -74,6 +94,133 @@ def build_anomaly_concatenated(df: pd.DataFrame, period_def: dict) -> pd.DataFra
         raise ValueError("No anomaly blocks found.")
     out = pd.concat(rows, axis=0, ignore_index=True)
     return out.sort_values(["block_index", "observation_date"]).reset_index(drop=True)
+
+
+def build_multistep_forecast_frame(
+    df_source: pd.DataFrame,
+    pred_a_scaled: np.ndarray,
+    pred_b_scaled: np.ndarray,
+    scaler_y: StandardScaler,
+    seq_length: int,
+    horizon: int,
+    start_offset: int,
+    min_target_start: int | None = None,
+):
+    dates = pd.to_datetime(df_source["observation_date"])
+    actual_prices = df_source["USD_KRW"].to_numpy()
+    arima_log = df_source["ARIMA_Log_pred"].to_numpy()
+    has_blocks = "block_index" in df_source.columns
+
+    rows = []
+    for pred_idx in range(0, len(pred_a_scaled), horizon):
+        global_start = start_offset + pred_idx
+        target_start = global_start + seq_length
+        target_end = target_start + horizon
+
+        if target_end > len(df_source):
+            break
+        if min_target_start is not None and target_start < min_target_start:
+            continue
+
+        if has_blocks:
+            block_values = df_source["block_index"].iloc[target_start:target_end]
+            if block_values.nunique() != 1:
+                continue
+            block_index = int(block_values.iloc[0])
+        else:
+            block_index = 1
+
+        base_price = actual_prices[target_start - 1]
+        arima_logs_h = arima_log[target_start:target_end]
+        resid_a = scaler_y.inverse_transform(pred_a_scaled[pred_idx].reshape(-1, 1)).flatten()
+        resid_b = scaler_y.inverse_transform(pred_b_scaled[pred_idx].reshape(-1, 1)).flatten()
+
+        pred_arima = base_price * np.exp(np.cumsum(arima_logs_h))
+        pred_a = base_price * np.exp(np.cumsum(arima_logs_h + resid_a))
+        pred_b = base_price * np.exp(np.cumsum(arima_logs_h + resid_b))
+
+        for step in range(horizon):
+            row_idx = target_start + step
+            rows.append(
+                {
+                    "date": dates.iloc[row_idx],
+                    "row_index": row_idx,
+                    "actual_fx": float(actual_prices[row_idx]),
+                    "pred_arima": float(pred_arima[step]),
+                    "pred_model_a": float(pred_a[step]),
+                    "pred_model_b": float(pred_b[step]),
+                    "block_index": block_index,
+                }
+            )
+
+    out = pd.DataFrame(rows)
+    if out.empty:
+        return pd.DataFrame(
+            columns=["date", "row_index", "actual_fx", "pred_arima", "pred_model_a", "pred_model_b", "block_index", "concat_step"]
+        )
+    if has_blocks:
+        out = out.sort_values(["block_index", "row_index"]).reset_index(drop=True)
+        # Align forecast x-position to the same concatenated index used by actual_df.
+        out["concat_step"] = out["row_index"] + 1
+    else:
+        out = out.sort_values("date").reset_index(drop=True)
+    return out
+
+
+def plot_multistep_forecast(
+    actual_df: pd.DataFrame,
+    forecast_df: pd.DataFrame,
+    out_path: Path,
+    title: str,
+    *,
+    use_concat_axis: bool = False,
+    split_date: pd.Timestamp | None = None,
+):
+    fig, ax = plt.subplots(figsize=(16, 7))
+
+    if use_concat_axis:
+        actual_sorted = actual_df.sort_values(["block_index", "observation_date"]).reset_index(drop=True).copy()
+        actual_sorted["concat_step"] = np.arange(1, len(actual_sorted) + 1)
+        ax.plot(actual_sorted["concat_step"], actual_sorted["USD_KRW"], color="#2f2f2f", linewidth=1.9, label="Actual USD/KRW")
+
+        x_forecast = forecast_df["concat_step"]
+        ax.set_xlabel("Concatenated time step")
+        if not forecast_df.empty:
+            x_min = int(forecast_df["concat_step"].min())
+            x_max = int(forecast_df["concat_step"].max())
+            pad = max(3, int((x_max - x_min) * 0.04))
+            ax.set_xlim(max(1, x_min - pad), x_max + pad)
+        ax.xaxis.set_major_locator(MaxNLocator(12))
+    else:
+        actual_sorted = actual_df.sort_values("observation_date").reset_index(drop=True)
+        actual_x = pd.to_datetime(actual_sorted["observation_date"])
+        ax.plot(actual_x, actual_sorted["USD_KRW"], color="#2f2f2f", linewidth=1.9, label="Actual USD/KRW")
+        x_forecast = pd.to_datetime(forecast_df["date"])
+        ax.set_xlabel("Date")
+        if not forecast_df.empty:
+            x_min = pd.to_datetime(forecast_df["date"]).min()
+            x_max = pd.to_datetime(forecast_df["date"]).max()
+            ax.set_xlim(x_min - pd.Timedelta(days=14), x_max + pd.Timedelta(days=14))
+        if split_date is not None:
+            ax.axvline(split_date, color="#888888", linestyle=":", linewidth=1.0, alpha=0.8, label="Train/Test split")
+        locator = mdates.AutoDateLocator(minticks=5, maxticks=10)
+        ax.xaxis.set_major_locator(locator)
+        ax.xaxis.set_major_formatter(mdates.ConciseDateFormatter(locator))
+
+    ax.plot(x_forecast, forecast_df["pred_arima"], color="#7f7f7f", linestyle="--", linewidth=1.4, label="ARIMA baseline")
+    ax.plot(x_forecast, forecast_df["pred_model_a"], color="#1f77b4", linewidth=1.8, label="Model A (LSTM)")
+    ax.plot(x_forecast, forecast_df["pred_model_b"], color="#d62728", linewidth=1.8, label="Model B (CNN-LSTM)")
+
+    ax.set_title(title)
+    ax.set_ylabel("USD/KRW")
+    if use_concat_axis:
+        ax.grid(axis="y", alpha=0.28)
+    else:
+        ax.grid(alpha=0.35)
+    ax.legend(loc="upper left", ncol=2, frameon=True, framealpha=0.96)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=160, bbox_inches="tight")
+    plt.close(fig)
 
 
 def prepare_log_data_for_period(df_period: pd.DataFrame, seq_length: int = 10, horizon: int = 5, test_ratio: float = 0.2, seasonal_order=(0, 0, 0, 0)):
@@ -238,6 +385,7 @@ def run_period(period_name: str, period_df: pd.DataFrame):
 
     X_train, y_train = prepared["X_train"], prepared["y_train"]
     X_test, y_test = prepared["X_test"], prepared["y_test"]
+    X_full = prepared["X_full"]
     scaler_y = prepared["scaler_y"]
     test_df = prepared["test_df"]
     df_ready = prepared["df_ready"]
@@ -278,6 +426,34 @@ def run_period(period_name: str, period_df: pd.DataFrame):
     # Predictions
     pred_a_scaled = trainer_A.predict(X_test) # shape: (N, horizon)
     pred_b_scaled = trainer_B.predict(X_test)
+    pred_a_full_scaled = trainer_A.predict(X_full)
+    pred_b_full_scaled = trainer_B.predict(X_full)
+
+    # Build stitched forecast frames for cleaner plots
+    train_size = prepared["train_rows"]
+    split_idx = train_size
+    split_date = pd.to_datetime(df_ready["observation_date"].iloc[split_idx]) if split_idx < len(df_ready) else None
+
+    eval_forecast_df = build_multistep_forecast_frame(
+        df_ready,
+        pred_a_scaled,
+        pred_b_scaled,
+        scaler_y,
+        seq_length=seq_length,
+        horizon=horizon,
+        start_offset=train_size - seq_length,
+        min_target_start=train_size,
+    )
+    full_forecast_df = build_multistep_forecast_frame(
+        df_ready,
+        pred_a_full_scaled,
+        pred_b_full_scaled,
+        scaler_y,
+        seq_length=seq_length,
+        horizon=horizon,
+        start_offset=0,
+        min_target_start=None,
+    )
     
     # We will pick non-overlapping windows of horizon to reconstruct
     # e.g., i=0, i=5, i=10
@@ -286,77 +462,68 @@ def run_period(period_name: str, period_df: pd.DataFrame):
     
     # Let's reconstruct the 5-day absolute price forecast for the first subset of test
     # Test indices start after train_size
-    train_size = prepared["train_rows"]
-    
     all_dates = pd.to_datetime(df_ready.get("observation_date", range(len(df_ready))))
-    plot_path = OUTPUT_DIR / "eval" / f"{period_name}_5_day_forecast_samples.png"
-    
-    fig, ax = plt.subplots(figsize=(15, 6))
-    
-    # Plot true actual lines in grey
-    d_test = all_dates.iloc[train_size:]
-    y_test_abs = actual_prices[train_size:]
-    ax.plot(d_test, y_test_abs, color='black', alpha=0.3, label="Actual USD/KRW")
+    eval_plot_path = OUTPUT_DIR / "eval" / f"{period_name}_5_day_forecast_samples.png"
+    full_plot_path = OUTPUT_DIR / "full" / f"{period_name}_5_day_forecast_full.png"
 
-    samples_to_plot = min(len(X_test) // horizon, 10) # 10 disjoint 5-day samples
-    
-    # For baseline naive, we will take y_T and flatline it 5 days.
+    if "block_index" in df_ready.columns and df_ready["block_index"].nunique() > 1:
+        plot_multistep_forecast(
+            df_ready,
+            full_forecast_df,
+            full_plot_path,
+            f"{period_name}: Full stitched 5-day forecasts",
+            use_concat_axis=True,
+        )
+        plot_multistep_forecast(
+            df_ready,
+            eval_forecast_df,
+            eval_plot_path,
+            f"{period_name}: Out-of-sample stitched 5-day forecasts",
+            use_concat_axis=True,
+        )
+    else:
+        plot_multistep_forecast(
+            df_ready,
+            full_forecast_df,
+            full_plot_path,
+            f"{period_name}: Full stitched 5-day forecasts",
+            use_concat_axis=False,
+            split_date=split_date,
+        )
+        plot_multistep_forecast(
+            df_ready,
+            eval_forecast_df,
+            eval_plot_path,
+            f"{period_name}: Out-of-sample stitched 5-day forecasts",
+            use_concat_axis=False,
+            split_date=split_date,
+        )
+
+    # Keep the existing sampled RMSE summary, but compute it from the stitched eval windows.
     rmse_a_list, rmse_b_list, rmse_naive_list = [], [], []
-
+    samples_to_plot = min(len(X_test) // horizon, 10)
     for i in range(samples_to_plot):
-        idx = i * horizon * 2 # Space them out
-        if idx + horizon > len(X_test): break
-        
-        # Absolute indices corresponding to this prediction window
-        # The sequence ending index in df_ready is: train_size - seq_length + seq_length + idx
-        start_t = train_size + idx 
-        base_price = actual_prices[start_t - 1] # Y_{t-1}
-        
-        # true prices for H days
+        idx = i * horizon * 2
+        if idx + horizon > len(X_test):
+            break
+
+        start_t = train_size + idx
+        base_price = actual_prices[start_t - 1]
         true_h_days = actual_prices[start_t : start_t + horizon]
-        
-        # Reconstruct ARIMA + Residual back into log return
-        # Shape of pred_a_scaled[idx]: (horizon,)
-        pred_scaled_vecA = pred_a_scaled[idx].reshape(-1,1)
-        pred_scaled_vecB = pred_b_scaled[idx].reshape(-1,1)
-        
+        pred_scaled_vecA = pred_a_scaled[idx].reshape(-1, 1)
+        pred_scaled_vecB = pred_b_scaled[idx].reshape(-1, 1)
         pred_residA = scaler_y.inverse_transform(pred_scaled_vecA).flatten()
         pred_residB = scaler_y.inverse_transform(pred_scaled_vecB).flatten()
-        
-        # ARIMA logs for this window
         arima_logs_H = arima_log[start_t : start_t + horizon]
-        
-        # Final predicted log returns
         log_pred_A = arima_logs_H + pred_residA
         log_pred_B = arima_logs_H + pred_residB
-        
-        # Reverse log returns: Y_T * exp(cumsum(R_t))
         abs_pred_A = base_price * np.exp(np.cumsum(log_pred_A))
         abs_pred_B = base_price * np.exp(np.cumsum(log_pred_B))
         abs_naive = np.full(horizon, base_price)
-        
+
         rmse_a_list.append(np.sqrt(mean_squared_error(true_h_days, abs_pred_A)))
         rmse_b_list.append(np.sqrt(mean_squared_error(true_h_days, abs_pred_B)))
         rmse_naive_list.append(np.sqrt(mean_squared_error(true_h_days, abs_naive)))
-
-        d_h = all_dates.iloc[start_t : start_t + horizon]
-        if i == 0:
-            ax.plot(d_h, true_h_days, color='black', linewidth=2, label="True Prices")
-            ax.plot(d_h, abs_pred_A, color='#1f77b4', marker='o', label="Model A 5-Day")
-            ax.plot(d_h, abs_pred_B, color='#d62728', marker='x', label="Model B 5-Day")
-            ax.plot(d_h, abs_naive, color='green', linestyle='--', label="Naive 5-Day ($Y_{t-1}$)")
-        else:
-            ax.plot(d_h, true_h_days, color='black', linewidth=2)
-            ax.plot(d_h, abs_pred_A, color='#1f77b4', marker='o')
-            ax.plot(d_h, abs_pred_B, color='#d62728', marker='x')
-            ax.plot(d_h, abs_naive, color='green', linestyle='--')
-            
-    ax.set_title(f"{period_name}: True Out-Of-Sample 5-Day Multi-Step Trajectories")
-    ax.legend()
-    ax.grid(alpha=0.3)
-    fig.tight_layout()
-    fig.savefig(plot_path, dpi=140)
-    plt.close(fig)
 
     print(f"\n--- {horizon}-Day RMSE Evaluation (Sampled Windows) ---")
     print(f"Model A (LSTM) Avg {horizon}-Day RMSE: {np.mean(rmse_a_list):.4f}")
@@ -367,7 +534,8 @@ def run_period(period_name: str, period_df: pd.DataFrame):
         "rmse_a": np.mean(rmse_a_list),
         "rmse_b": np.mean(rmse_b_list),
         "rmse_naive": np.mean(rmse_naive_list),
-        "plot": str(plot_path.relative_to(BASE_DIR))
+        "plot": str(eval_plot_path.relative_to(BASE_DIR)),
+        "plot_full": str(full_plot_path.relative_to(BASE_DIR)),
     }
 
 def main():
