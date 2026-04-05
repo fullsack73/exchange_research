@@ -1,4 +1,5 @@
 import copy
+import argparse
 import itertools
 import json
 import os
@@ -39,8 +40,16 @@ plt.rcParams.update({
     "ytick.labelsize": 10,
 })
 
-import sys
-target_type = sys.argv[1] if len(sys.argv) > 1 else "mmf"
+parser = argparse.ArgumentParser(description="Hybrid log-return multi-step training with HPO")
+parser.add_argument("target", nargs="?", default="mmf", choices=["mmf", "m2"], help="target dataset type")
+parser.add_argument(
+    "--hpo-level",
+    default="standard",
+    choices=["quick", "standard", "aggressive"],
+    help="HPO search budget preset",
+)
+args = parser.parse_args()
+target_type = args.target
 
 BASE_DIR = Path("/Applications/dollar_price")
 PERIOD_DEF_PATH = BASE_DIR / "analysis" / "anomaly" / "period_definition.json"
@@ -57,11 +66,32 @@ os.makedirs(OUTPUT_DIR / "full", exist_ok=True)
 os.makedirs(OUTPUT_DIR / "eval", exist_ok=True)
 os.makedirs(OUTPUT_DIR / "hpo", exist_ok=True)
 
-TOTAL_HPO_TRIALS = 10
-TRIALS_PER_MODEL = 5
-MAX_TUNE_TRAIN = 1200
-MAX_TUNE_VAL = 300
 HORIZON = 5
+
+HPO_PRESETS = {
+    "quick": {
+        "trials_a": 10,
+        "trials_b": 10,
+        "epochs_tune": 25,
+        "epochs_final": 70,
+        "patience": 6,
+    },
+    "standard": {
+        "trials_a": 24,
+        "trials_b": 24,
+        "epochs_tune": 40,
+        "epochs_final": 100,
+        "patience": 8,
+    },
+    "aggressive": {
+        "trials_a": 40,
+        "trials_b": 40,
+        "epochs_tune": 60,
+        "epochs_final": 140,
+        "patience": 10,
+    },
+}
+HPO_CONFIG = HPO_PRESETS[args.hpo_level]
 
 
 def create_sequences(X: np.ndarray, y: np.ndarray, seq_len: int, horizon: int):
@@ -371,10 +401,54 @@ class Hybrid_Model_Trainer:
         return preds
 
 
-# Very simple HPO grid to save time for proof of concept
 def build_grids():
-    gA = [{"hidden_dim":32, "lr":0.001}, {"hidden_dim":64, "lr":0.005}, {"hidden_dim":16, "lr":0.001}]
-    gB = [{"hidden_dim":32, "cnn_filters":16, "kernel_size":3, "lr":0.001}, {"hidden_dim":64, "cnn_filters":32, "kernel_size":5, "lr":0.005}]
+    # Model A (LSTM): wide candidate pool, then deterministic sampling by trial budget.
+    cand_a = []
+    for hidden_dim, lr, dropout, batch_size in itertools.product(
+        [16, 32, 48, 64, 96],
+        [0.0003, 0.0005, 0.001, 0.0015, 0.002],
+        [0.1, 0.2, 0.3],
+        [32, 64],
+    ):
+        cand_a.append(
+            {
+                "hidden_dim": hidden_dim,
+                "lr": lr,
+                "dropout": dropout,
+                "batch_size": batch_size,
+                "epochs": HPO_CONFIG["epochs_tune"],
+                "patience": HPO_CONFIG["patience"],
+            }
+        )
+
+    # Model B (CNN-LSTM): include CNN-specific search dimensions.
+    cand_b = []
+    for hidden_dim, cnn_filters, kernel_size, lr, dropout, batch_size in itertools.product(
+        [16, 32, 48],
+        [8, 12, 16, 20, 24],
+        [3, 5, 7],
+        [0.0005, 0.001, 0.0015],
+        [0.1, 0.2],
+        [32, 64],
+    ):
+        cand_b.append(
+            {
+                "hidden_dim": hidden_dim,
+                "cnn_filters": cnn_filters,
+                "kernel_size": kernel_size,
+                "lr": lr,
+                "dropout": dropout,
+                "batch_size": batch_size,
+                "epochs": HPO_CONFIG["epochs_tune"],
+                "patience": HPO_CONFIG["patience"],
+            }
+        )
+
+    rng = np.random.default_rng(42)
+    idx_a = rng.permutation(len(cand_a))[: HPO_CONFIG["trials_a"]]
+    idx_b = rng.permutation(len(cand_b))[: HPO_CONFIG["trials_b"]]
+    gA = [cand_a[i] for i in idx_a]
+    gB = [cand_b[i] for i in idx_b]
     return gA, gB
 
 
@@ -391,37 +465,134 @@ def run_period(period_name: str, period_df: pd.DataFrame):
     df_ready = prepared["df_ready"]
     input_dim = X_train.shape[2]
 
-    # Quick HPO
+    # Expanded HPO with saved trial logs.
     gridA, gridB = build_grids()
     best_a_cfg, best_val_a = gridA[0], float('inf')
     best_b_cfg, best_val_b = gridB[0], float('inf')
+    trials_a, trials_b = [], []
 
-    print("Tuning Model A...")
-    for cfg in gridA:
-        net = LSTM_Multi_Step(input_dim, hidden_dim=cfg["hidden_dim"], horizon=horizon)
+    print(f"Tuning Model A... ({len(gridA)} trials)")
+    for i, cfg in enumerate(gridA, start=1):
+        trial_start = time.time()
+        torch.manual_seed(1000 + i)
+        np.random.seed(1000 + i)
+
+        net = LSTM_Multi_Step(
+            input_dim,
+            hidden_dim=cfg["hidden_dim"],
+            dropout=cfg["dropout"],
+            horizon=horizon,
+        )
         trainer = Hybrid_Model_Trainer(net, lr=cfg["lr"])
-        val_rmse = np.sqrt(trainer.fit(X_train, y_train, epochs=20))
+        val_rmse = np.sqrt(
+            trainer.fit(
+                X_train,
+                y_train,
+                epochs=cfg["epochs"],
+                batch_size=cfg["batch_size"],
+                patience=cfg["patience"],
+            )
+        )
+        trials_a.append(
+            {
+                "trial": i,
+                **cfg,
+                "val_rmse_scaled": float(val_rmse),
+                "duration_sec": float(time.time() - trial_start),
+            }
+        )
         if val_rmse < best_val_a:
             best_val_a = val_rmse
             best_a_cfg = cfg
 
-    print("Tuning Model B...")
-    for cfg in gridB:
-        net = CNN_LSTM_Multi_Step(input_dim, cnn_filters=cfg["cnn_filters"], kernel_size=cfg["kernel_size"], hidden_dim=cfg["hidden_dim"], horizon=horizon)
+    print(f"Tuning Model B... ({len(gridB)} trials)")
+    for i, cfg in enumerate(gridB, start=1):
+        trial_start = time.time()
+        torch.manual_seed(2000 + i)
+        np.random.seed(2000 + i)
+
+        net = CNN_LSTM_Multi_Step(
+            input_dim,
+            cnn_filters=cfg["cnn_filters"],
+            kernel_size=cfg["kernel_size"],
+            hidden_dim=cfg["hidden_dim"],
+            dropout=cfg["dropout"],
+            horizon=horizon,
+        )
         trainer = Hybrid_Model_Trainer(net, lr=cfg["lr"])
-        val_rmse = np.sqrt(trainer.fit(X_train, y_train, epochs=20))
+        val_rmse = np.sqrt(
+            trainer.fit(
+                X_train,
+                y_train,
+                epochs=cfg["epochs"],
+                batch_size=cfg["batch_size"],
+                patience=cfg["patience"],
+            )
+        )
+        trials_b.append(
+            {
+                "trial": i,
+                **cfg,
+                "val_rmse_scaled": float(val_rmse),
+                "duration_sec": float(time.time() - trial_start),
+            }
+        )
         if val_rmse < best_val_b:
             best_val_b = val_rmse
             best_b_cfg = cfg
 
-    print("Training Final Models...")
-    net_A = LSTM_Multi_Step(input_dim, hidden_dim=best_a_cfg["hidden_dim"], horizon=horizon)
-    trainer_A = Hybrid_Model_Trainer(net_A, lr=best_a_cfg["lr"])
-    trainer_A.fit(X_train, y_train, epochs=50)
+    pd.DataFrame(trials_a).sort_values("val_rmse_scaled").to_csv(
+        OUTPUT_DIR / "hpo" / f"{period_name}_model_a_trials.csv", index=False
+    )
+    pd.DataFrame(trials_b).sort_values("val_rmse_scaled").to_csv(
+        OUTPUT_DIR / "hpo" / f"{period_name}_model_b_trials.csv", index=False
+    )
+    with open(OUTPUT_DIR / "hpo" / f"{period_name}_hpo_summary.json", "w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "hpo_level": args.hpo_level,
+                "target": target_type,
+                "period": period_name,
+                "model_a_best": {**best_a_cfg, "best_val_rmse_scaled": float(best_val_a)},
+                "model_b_best": {**best_b_cfg, "best_val_rmse_scaled": float(best_val_b)},
+            },
+            f,
+            indent=2,
+            ensure_ascii=False,
+        )
 
-    net_B = CNN_LSTM_Multi_Step(input_dim, cnn_filters=best_b_cfg["cnn_filters"], kernel_size=best_b_cfg["kernel_size"], hidden_dim=best_b_cfg["hidden_dim"], horizon=horizon)
+    print("Training Final Models...")
+    net_A = LSTM_Multi_Step(
+        input_dim,
+        hidden_dim=best_a_cfg["hidden_dim"],
+        dropout=best_a_cfg["dropout"],
+        horizon=horizon,
+    )
+    trainer_A = Hybrid_Model_Trainer(net_A, lr=best_a_cfg["lr"])
+    trainer_A.fit(
+        X_train,
+        y_train,
+        epochs=HPO_CONFIG["epochs_final"],
+        batch_size=best_a_cfg["batch_size"],
+        patience=max(best_a_cfg["patience"], 8),
+    )
+
+    net_B = CNN_LSTM_Multi_Step(
+        input_dim,
+        cnn_filters=best_b_cfg["cnn_filters"],
+        kernel_size=best_b_cfg["kernel_size"],
+        hidden_dim=best_b_cfg["hidden_dim"],
+        dropout=best_b_cfg["dropout"],
+        horizon=horizon,
+    )
     trainer_B = Hybrid_Model_Trainer(net_B, lr=best_b_cfg["lr"])
-    trainer_B.fit(X_train, y_train, epochs=50)
+    trainer_B.fit(
+        X_train,
+        y_train,
+        epochs=HPO_CONFIG["epochs_final"],
+        batch_size=best_b_cfg["batch_size"],
+        patience=max(best_b_cfg["patience"], 8),
+    )
 
     # Predictions
     pred_a_scaled = trainer_A.predict(X_test) # shape: (N, horizon)
@@ -534,6 +705,9 @@ def run_period(period_name: str, period_df: pd.DataFrame):
         "rmse_a": np.mean(rmse_a_list),
         "rmse_b": np.mean(rmse_b_list),
         "rmse_naive": np.mean(rmse_naive_list),
+        "hpo_level": args.hpo_level,
+        "best_a": best_a_cfg,
+        "best_b": best_b_cfg,
         "plot": str(eval_plot_path.relative_to(BASE_DIR)),
         "plot_full": str(full_plot_path.relative_to(BASE_DIR)),
     }
@@ -550,7 +724,7 @@ def main():
 
     df_anomaly_concat = build_anomaly_concatenated(df_full, period_def)
 
-    print("Running Multi-Step Log Return Models...")
+    print(f"Running Multi-Step Log Return Models... (target={target_type}, hpo_level={args.hpo_level})")
     res_full = run_period("full_1995_2026", df_full)
     res_full["period"] = "full_1995_2026"
 
@@ -573,6 +747,9 @@ def main():
         lines.append(f"Model A (LSTM) Avg 5-Day RMSE: {r['rmse_a']:.4f}")
         lines.append(f"Model B (CNN-LSTM) Avg 5-Day RMSE: {r['rmse_b']:.4f}")
         lines.append(f"Naive Baseline Avg 5-Day RMSE: {r['rmse_naive']:.4f}")
+        lines.append(f"HPO level: {r['hpo_level']}")
+        lines.append(f"Best A cfg: {r['best_a']}")
+        lines.append(f"Best B cfg: {r['best_b']}")
         lines.append(f"Plot: {r['plot']}")
 
         better = "A" if r['rmse_a'] < r['rmse_b'] else "B"

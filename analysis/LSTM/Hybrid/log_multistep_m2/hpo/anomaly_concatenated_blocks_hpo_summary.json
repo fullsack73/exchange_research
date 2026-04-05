@@ -1,0 +1,25 @@
+{
+  "hpo_level": "standard",
+  "target": "m2",
+  "period": "anomaly_concatenated_blocks",
+  "model_a_best": {
+    "hidden_dim": 16,
+    "lr": 0.002,
+    "dropout": 0.1,
+    "batch_size": 32,
+    "epochs": 40,
+    "patience": 8,
+    "best_val_rmse_scaled": 0.44311535567665167
+  },
+  "model_b_best": {
+    "hidden_dim": 32,
+    "cnn_filters": 12,
+    "kernel_size": 3,
+    "lr": 0.0015,
+    "dropout": 0.1,
+    "batch_size": 32,
+    "epochs": 40,
+    "patience": 8,
+    "best_val_rmse_scaled": 0.4429123607352796
+  }
+}

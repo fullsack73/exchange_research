@@ -3,15 +3,21 @@ Data range: 1995-01-01 to 2026-03-20
 Anomaly definition: period_definition.json -> anomaly_blocks_for_analysis
 
 [full_1995_2026]
-Model A (LSTM) Avg 5-Day RMSE: 7.8805
-Model B (CNN-LSTM) Avg 5-Day RMSE: 8.0144
+Model A (LSTM) Avg 5-Day RMSE: 7.7167
+Model B (CNN-LSTM) Avg 5-Day RMSE: 7.8671
 Naive Baseline Avg 5-Day RMSE: 8.3255
+HPO level: standard
+Best A cfg: {'hidden_dim': 48, 'lr': 0.0015, 'dropout': 0.1, 'batch_size': 64, 'epochs': 40, 'patience': 8}
+Best B cfg: {'hidden_dim': 16, 'cnn_filters': 20, 'kernel_size': 3, 'lr': 0.0005, 'dropout': 0.2, 'batch_size': 64, 'epochs': 40, 'patience': 8}
 Plot: analysis/LSTM/Hybrid/log_multistep_m2/eval/full_1995_2026_5_day_forecast_samples.png
 Better model: A
 
 [anomaly_concatenated_blocks]
-Model A (LSTM) Avg 5-Day RMSE: 9.7731
-Model B (CNN-LSTM) Avg 5-Day RMSE: 12.3031
+Model A (LSTM) Avg 5-Day RMSE: 9.9063
+Model B (CNN-LSTM) Avg 5-Day RMSE: 10.8176
 Naive Baseline Avg 5-Day RMSE: 9.8297
+HPO level: standard
+Best A cfg: {'hidden_dim': 16, 'lr': 0.002, 'dropout': 0.1, 'batch_size': 32, 'epochs': 40, 'patience': 8}
+Best B cfg: {'hidden_dim': 32, 'cnn_filters': 12, 'kernel_size': 3, 'lr': 0.0015, 'dropout': 0.1, 'batch_size': 32, 'epochs': 40, 'patience': 8}
 Plot: analysis/LSTM/Hybrid/log_multistep_m2/eval/anomaly_concatenated_blocks_5_day_forecast_samples.png
-Better model: A
+Better model: Naive

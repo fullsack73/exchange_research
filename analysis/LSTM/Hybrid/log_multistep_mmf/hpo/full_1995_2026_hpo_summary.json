@@ -1,0 +1,25 @@
+{
+  "hpo_level": "standard",
+  "target": "mmf",
+  "period": "full_1995_2026",
+  "model_a_best": {
+    "hidden_dim": 16,
+    "lr": 0.0003,
+    "dropout": 0.2,
+    "batch_size": 32,
+    "epochs": 40,
+    "patience": 8,
+    "best_val_rmse_scaled": 0.48607818891288246
+  },
+  "model_b_best": {
+    "hidden_dim": 16,
+    "cnn_filters": 20,
+    "kernel_size": 3,
+    "lr": 0.0005,
+    "dropout": 0.2,
+    "batch_size": 64,
+    "epochs": 40,
+    "patience": 8,
+    "best_val_rmse_scaled": 0.4853950680551328
+  }
+}
