@@ -1,0 +1,166 @@
+﻿Variable,Type,Description
+USD_KRW,Raw,USD_KRW original measurement
+USD_KRW_MoM,MoM_Pct,1-month percentage change
+USD_KRW_YoY,YoY_Pct,12-month percentage change
+USD_KRW_MoM_lag1,Lag,1-month lag of USD_KRW_MoM
+USD_KRW_MoM_lag3,Lag,3-month lag of USD_KRW_MoM
+USD_KRW_MoM_lag6,Lag,6-month lag of USD_KRW_MoM
+USD_KRW_YoY_lag1,Lag,1-month lag of USD_KRW_YoY
+USD_KRW_YoY_lag3,Lag,3-month lag of USD_KRW_YoY
+USD_KRW_YoY_lag6,Lag,6-month lag of USD_KRW_YoY
+Exports,Raw,Exports original measurement
+Exports_MoM,MoM_Pct,1-month percentage change
+Exports_YoY,YoY_Pct,12-month percentage change
+Exports_MoM_lag1,Lag,1-month lag of Exports_MoM
+Exports_MoM_lag3,Lag,3-month lag of Exports_MoM
+Exports_MoM_lag6,Lag,6-month lag of Exports_MoM
+Exports_YoY_lag1,Lag,1-month lag of Exports_YoY
+Exports_YoY_lag3,Lag,3-month lag of Exports_YoY
+Exports_YoY_lag6,Lag,6-month lag of Exports_YoY
+Imports,Raw,Imports original measurement
+Imports_MoM,MoM_Pct,1-month percentage change
+Imports_YoY,YoY_Pct,12-month percentage change
+Imports_MoM_lag1,Lag,1-month lag of Imports_MoM
+Imports_MoM_lag3,Lag,3-month lag of Imports_MoM
+Imports_MoM_lag6,Lag,6-month lag of Imports_MoM
+Imports_YoY_lag1,Lag,1-month lag of Imports_YoY
+Imports_YoY_lag3,Lag,3-month lag of Imports_YoY
+Imports_YoY_lag6,Lag,6-month lag of Imports_YoY
+Trade_Balance,Raw,Trade_Balance original measurement
+Trade_Balance_MoM,MoM_Diff,1-month base difference
+Trade_Balance_YoY,YoY_Diff,12-month base difference
+Trade_Balance_MoM_lag1,Lag,1-month lag of Trade_Balance_MoM
+Trade_Balance_MoM_lag3,Lag,3-month lag of Trade_Balance_MoM
+Trade_Balance_MoM_lag6,Lag,6-month lag of Trade_Balance_MoM
+Trade_Balance_YoY_lag1,Lag,1-month lag of Trade_Balance_YoY
+Trade_Balance_YoY_lag3,Lag,3-month lag of Trade_Balance_YoY
+Trade_Balance_YoY_lag6,Lag,6-month lag of Trade_Balance_YoY
+Current_Account,Raw,Current_Account original measurement
+Current_Account_MoM,MoM_Diff,1-month base difference
+Current_Account_YoY,YoY_Diff,12-month base difference
+Current_Account_MoM_lag1,Lag,1-month lag of Current_Account_MoM
+Current_Account_MoM_lag3,Lag,3-month lag of Current_Account_MoM
+Current_Account_MoM_lag6,Lag,6-month lag of Current_Account_MoM
+Current_Account_YoY_lag1,Lag,1-month lag of Current_Account_YoY
+Current_Account_YoY_lag3,Lag,3-month lag of Current_Account_YoY
+Current_Account_YoY_lag6,Lag,6-month lag of Current_Account_YoY
+CPI_KOR,Raw,CPI_KOR original measurement
+CPI_KOR_MoM,MoM_Pct,1-month percentage change
+CPI_KOR_YoY,YoY_Pct,12-month percentage change
+CPI_KOR_MoM_lag1,Lag,1-month lag of CPI_KOR_MoM
+CPI_KOR_MoM_lag3,Lag,3-month lag of CPI_KOR_MoM
+CPI_KOR_MoM_lag6,Lag,6-month lag of CPI_KOR_MoM
+CPI_KOR_YoY_lag1,Lag,1-month lag of CPI_KOR_YoY
+CPI_KOR_YoY_lag3,Lag,3-month lag of CPI_KOR_YoY
+CPI_KOR_YoY_lag6,Lag,6-month lag of CPI_KOR_YoY
+Import_Price_Index,Raw,Import_Price_Index original measurement
+Import_Price_Index_MoM,MoM_Pct,1-month percentage change
+Import_Price_Index_YoY,YoY_Pct,12-month percentage change
+Import_Price_Index_MoM_lag1,Lag,1-month lag of Import_Price_Index_MoM
+Import_Price_Index_MoM_lag3,Lag,3-month lag of Import_Price_Index_MoM
+Import_Price_Index_MoM_lag6,Lag,6-month lag of Import_Price_Index_MoM
+Import_Price_Index_YoY_lag1,Lag,1-month lag of Import_Price_Index_YoY
+Import_Price_Index_YoY_lag3,Lag,3-month lag of Import_Price_Index_YoY
+Import_Price_Index_YoY_lag6,Lag,6-month lag of Import_Price_Index_YoY
+Industrial_Production,Raw,Industrial_Production original measurement
+Industrial_Production_MoM,MoM_Pct,1-month percentage change
+Industrial_Production_YoY,YoY_Pct,12-month percentage change
+Industrial_Production_MoM_lag1,Lag,1-month lag of Industrial_Production_MoM
+Industrial_Production_MoM_lag3,Lag,3-month lag of Industrial_Production_MoM
+Industrial_Production_MoM_lag6,Lag,6-month lag of Industrial_Production_MoM
+Industrial_Production_YoY_lag1,Lag,1-month lag of Industrial_Production_YoY
+Industrial_Production_YoY_lag3,Lag,3-month lag of Industrial_Production_YoY
+Industrial_Production_YoY_lag6,Lag,6-month lag of Industrial_Production_YoY
+Unemployment_KOR,Raw,Unemployment_KOR original measurement
+Unemployment_KOR_MoM,MoM_Diff,1-month base difference
+Unemployment_KOR_YoY,YoY_Diff,12-month base difference
+Unemployment_KOR_MoM_lag1,Lag,1-month lag of Unemployment_KOR_MoM
+Unemployment_KOR_MoM_lag3,Lag,3-month lag of Unemployment_KOR_MoM
+Unemployment_KOR_MoM_lag6,Lag,6-month lag of Unemployment_KOR_MoM
+Unemployment_KOR_YoY_lag1,Lag,1-month lag of Unemployment_KOR_YoY
+Unemployment_KOR_YoY_lag3,Lag,3-month lag of Unemployment_KOR_YoY
+Unemployment_KOR_YoY_lag6,Lag,6-month lag of Unemployment_KOR_YoY
+M2,Raw,M2 original measurement
+M2_MoM,MoM_Pct,1-month percentage change
+M2_YoY,YoY_Pct,12-month percentage change
+M2_MoM_lag1,Lag,1-month lag of M2_MoM
+M2_MoM_lag3,Lag,3-month lag of M2_MoM
+M2_MoM_lag6,Lag,6-month lag of M2_MoM
+M2_YoY_lag1,Lag,1-month lag of M2_YoY
+M2_YoY_lag3,Lag,3-month lag of M2_YoY
+M2_YoY_lag6,Lag,6-month lag of M2_YoY
+MMF,Raw,MMF original measurement
+MMF_MoM,MoM_Pct,1-month percentage change
+MMF_YoY,YoY_Pct,12-month percentage change
+MMF_MoM_lag1,Lag,1-month lag of MMF_MoM
+MMF_MoM_lag3,Lag,3-month lag of MMF_MoM
+MMF_MoM_lag6,Lag,6-month lag of MMF_MoM
+MMF_YoY_lag1,Lag,1-month lag of MMF_YoY
+MMF_YoY_lag3,Lag,3-month lag of MMF_YoY
+MMF_YoY_lag6,Lag,6-month lag of MMF_YoY
+Demand_Deposits,Raw,Demand_Deposits original measurement
+Demand_Deposits_MoM,MoM_Pct,1-month percentage change
+Demand_Deposits_YoY,YoY_Pct,12-month percentage change
+Demand_Deposits_MoM_lag1,Lag,1-month lag of Demand_Deposits_MoM
+Demand_Deposits_MoM_lag3,Lag,3-month lag of Demand_Deposits_MoM
+Demand_Deposits_MoM_lag6,Lag,6-month lag of Demand_Deposits_MoM
+Demand_Deposits_YoY_lag1,Lag,1-month lag of Demand_Deposits_YoY
+Demand_Deposits_YoY_lag3,Lag,3-month lag of Demand_Deposits_YoY
+Demand_Deposits_YoY_lag6,Lag,6-month lag of Demand_Deposits_YoY
+Policy_Rate_KOR,Raw,Policy_Rate_KOR original measurement
+Policy_Rate_KOR_MoM,MoM_Diff,1-month base difference
+Policy_Rate_KOR_YoY,YoY_Diff,12-month base difference
+Policy_Rate_KOR_MoM_lag1,Lag,1-month lag of Policy_Rate_KOR_MoM
+Policy_Rate_KOR_MoM_lag3,Lag,3-month lag of Policy_Rate_KOR_MoM
+Policy_Rate_KOR_MoM_lag6,Lag,6-month lag of Policy_Rate_KOR_MoM
+Policy_Rate_KOR_YoY_lag1,Lag,1-month lag of Policy_Rate_KOR_YoY
+Policy_Rate_KOR_YoY_lag3,Lag,3-month lag of Policy_Rate_KOR_YoY
+Policy_Rate_KOR_YoY_lag6,Lag,6-month lag of Policy_Rate_KOR_YoY
+Policy_Rate_USA,Raw,Policy_Rate_USA original measurement
+Policy_Rate_USA_MoM,MoM_Diff,1-month base difference
+Policy_Rate_USA_YoY,YoY_Diff,12-month base difference
+Policy_Rate_USA_MoM_lag1,Lag,1-month lag of Policy_Rate_USA_MoM
+Policy_Rate_USA_MoM_lag3,Lag,3-month lag of Policy_Rate_USA_MoM
+Policy_Rate_USA_MoM_lag6,Lag,6-month lag of Policy_Rate_USA_MoM
+Policy_Rate_USA_YoY_lag1,Lag,1-month lag of Policy_Rate_USA_YoY
+Policy_Rate_USA_YoY_lag3,Lag,3-month lag of Policy_Rate_USA_YoY
+Policy_Rate_USA_YoY_lag6,Lag,6-month lag of Policy_Rate_USA_YoY
+DXY,Raw,DXY original measurement
+DXY_MoM,MoM_Pct,1-month percentage change
+DXY_YoY,YoY_Pct,12-month percentage change
+DXY_MoM_lag1,Lag,1-month lag of DXY_MoM
+DXY_MoM_lag3,Lag,3-month lag of DXY_MoM
+DXY_MoM_lag6,Lag,6-month lag of DXY_MoM
+DXY_YoY_lag1,Lag,1-month lag of DXY_YoY
+DXY_YoY_lag3,Lag,3-month lag of DXY_YoY
+DXY_YoY_lag6,Lag,6-month lag of DXY_YoY
+VIX,Raw,VIX original measurement
+VIX_MoM,MoM_Pct,1-month percentage change
+VIX_YoY,YoY_Pct,12-month percentage change
+VIX_MoM_lag1,Lag,1-month lag of VIX_MoM
+VIX_MoM_lag3,Lag,3-month lag of VIX_MoM
+VIX_MoM_lag6,Lag,6-month lag of VIX_MoM
+VIX_YoY_lag1,Lag,1-month lag of VIX_YoY
+VIX_YoY_lag3,Lag,3-month lag of VIX_YoY
+VIX_YoY_lag6,Lag,6-month lag of VIX_YoY
+WTI_Oil,Raw,WTI_Oil original measurement
+WTI_Oil_MoM,MoM_Pct,1-month percentage change
+WTI_Oil_YoY,YoY_Pct,12-month percentage change
+WTI_Oil_MoM_lag1,Lag,1-month lag of WTI_Oil_MoM
+WTI_Oil_MoM_lag3,Lag,3-month lag of WTI_Oil_MoM
+WTI_Oil_MoM_lag6,Lag,6-month lag of WTI_Oil_MoM
+WTI_Oil_YoY_lag1,Lag,1-month lag of WTI_Oil_YoY
+WTI_Oil_YoY_lag3,Lag,3-month lag of WTI_Oil_YoY
+WTI_Oil_YoY_lag6,Lag,6-month lag of WTI_Oil_YoY
+Rate_Spread_KOR_USA,Raw,Rate_Spread_KOR_USA original measurement
+Rate_Spread_KOR_USA_MoM,MoM_Diff,1-month base difference
+Rate_Spread_KOR_USA_YoY,YoY_Diff,12-month base difference
+Rate_Spread_KOR_USA_MoM_lag1,Lag,1-month lag of Rate_Spread_KOR_USA_MoM
+Rate_Spread_KOR_USA_MoM_lag3,Lag,3-month lag of Rate_Spread_KOR_USA_MoM
+Rate_Spread_KOR_USA_MoM_lag6,Lag,6-month lag of Rate_Spread_KOR_USA_MoM
+Rate_Spread_KOR_USA_YoY_lag1,Lag,1-month lag of Rate_Spread_KOR_USA_YoY
+Rate_Spread_KOR_USA_YoY_lag3,Lag,3-month lag of Rate_Spread_KOR_USA_YoY
+Rate_Spread_KOR_USA_YoY_lag6,Lag,6-month lag of Rate_Spread_KOR_USA_YoY
+FX_Surge,Target,"1 if USD_KRW_MoM >= 0.0363 (Top 10%), else 0"
+Is_Abnormal_Period,Label,"1 if identified as abnormal sequence, else 0"
+Period_Type,Label,String classification (Abnormal vs Normal)

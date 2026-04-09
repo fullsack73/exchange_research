@@ -1,0 +1,9 @@
+﻿Variable,Best_Lag,Max_Correlation,Interpretation
+DXY_MoM,0,0.6457030276573159,동행 (Immediate Co-movement)
+Import_Price_Index_YoY,-1,0.24954909707872036,1개월 후행 (Variable Lags FX)
+Exports_YoY,-6,-0.1611725119213603,6개월 후행 (Variable Lags FX)
+Trade_Balance_MoM,2,0.14566248562773956,2개월 선행 (Variable Leads FX)
+CPI_KOR_YoY,-1,0.10740715317657076,1개월 후행 (Variable Lags FX)
+Industrial_Production_YoY,-4,-0.18981457163504528,4개월 후행 (Variable Lags FX)
+Rate_Spread_KOR_USA_MoM,3,0.19304201377285085,3개월 선행 (Variable Leads FX)
+Unemployment_KOR_YoY,3,-0.0969870132133898,3개월 선행 (Variable Leads FX)
