@@ -2,8 +2,8 @@ import pandas as pd
 import numpy as np
 
 # 데이터 로드
-cpi_df = pd.read_csv('data/us_cpi_monthly.csv', index_col=0, parse_dates=True)
-fx_df = pd.read_csv('data/krwusd_daily.csv', index_col=0, parse_dates=True)
+cpi_df = pd.read_csv('../../data/us_cpi_monthly.csv', index_col=0, parse_dates=True)
+fx_df = pd.read_csv('../../data/krwusd_daily.csv', index_col=0, parse_dates=True)
 
 # 1. 환율 전처리 (월간 변화율 및 급등 구간 정의)
 # 월평균 환율 계산
@@ -40,7 +40,7 @@ final_df = pd.merge(fx_monthly[['FX_Ret', 'Is_Spike']], cpi_features, left_index
 final_df = final_df.dropna()
 
 # 저장
-final_df.to_csv('data/final_processed_data.csv')
+final_df.to_csv('../../data/final_processed_data.csv')
 
 print("Preprocessing completed.")
 print(f"Final dataset shape: {final_df.shape}")

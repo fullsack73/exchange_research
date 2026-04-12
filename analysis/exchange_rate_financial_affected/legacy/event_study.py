@@ -4,9 +4,9 @@ import matplotlib.pyplot as plt
 import os
 
 # 데이터 로드
-fx_daily = pd.read_csv('data/krwusd_daily.csv', index_col=0, parse_dates=True)
-release_dates = pd.read_csv('data/cpi_release_dates.csv', parse_dates=['release_date'])
-cpi_monthly = pd.read_csv('data/us_cpi_monthly.csv', index_col=0, parse_dates=True)
+fx_daily = pd.read_csv('../../data/krwusd_daily.csv', index_col=0, parse_dates=True)
+release_dates = pd.read_csv('../../data/cpi_release_dates.csv', parse_dates=['release_date'])
+cpi_monthly = pd.read_csv('../../data/us_cpi_monthly.csv', index_col=0, parse_dates=True)
 
 # 일별 수익률 계산
 fx_daily['Return'] = fx_daily['KRWUSD'].pct_change()
@@ -43,7 +43,7 @@ for idx, row in release_dates.iterrows():
             })
 
 event_df = pd.DataFrame(event_results)
-event_df.to_csv('results/event_study_results.csv', index=False)
+event_df.to_csv('full/event_study_results.csv', index=False)
 
 # 시각화: Core MoM vs FX Reaction
 plt.figure(figsize=(10, 6))
@@ -53,7 +53,7 @@ plt.axvline(0, color='black', linestyle='--', linewidth=0.5)
 plt.title("US Core CPI MoM vs KRW/USD Reaction on Release Day")
 plt.xlabel("Core CPI MoM")
 plt.ylabel("KRW/USD Daily Return")
-plt.savefig('results/event_study_scatter.png', bbox_inches='tight')
+plt.savefig('full/event_study_scatter.png', bbox_inches='
 plt.close()
 
 print("Event study completed.")

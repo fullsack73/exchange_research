@@ -3,7 +3,7 @@ import requests # 웹에서 데이터 가져오기
 import io # 메모리에서 데이터를 파일처럼 다루기
 import os # 운영체제 기능 사용
 
-os.makedirs('data', exist_ok=True) # data 폴더 생성, 이미 있으면 무시 (exist_ok=True)
+os.makedirs('../../data', exist_ok=True) # data 폴더 생성, 이미 있으면 무시 (exist_ok=True)
 
 series_dict = {
     'Headline': 'CPIAUCSL', # 미국 전체 CPI
@@ -41,12 +41,12 @@ if all_dfs: # all_dfs 리스트에 데이터가 하나라도 있으면
     
     # Save daily KRWUSD
     krwusd_daily = final_df[['KRWUSD']].copy().dropna() # KRWUSD 컬럼만 선택하고 결측치 제거
-    krwusd_daily.to_csv('data/krwusd_daily.csv') # CSV 파일로 저장
+    krwusd_daily.to_csv('../../data/krwusd_daily.csv') # CSV 파일로 저장
     
     # Save monthly CPI (resampled to Month Start) # 월별 CPI 저장 (월초 기준으로 리샘플링)
     cpi_cols = [c for c in final_df.columns if c != 'KRWUSD'] # KRWUSD를 제외한 나머지 컬럼 선택
     cpi_monthly = final_df[cpi_cols].resample('MS').first().dropna(how='all') # 월초 기준으로 리샘플링하고 결측치 제거
-    cpi_monthly.to_csv('data/us_cpi_monthly.csv') # CSV 파일로 저장
+    cpi_monthly.to_csv('../../data/us_cpi_monthly.csv') # CSV 파일로 저장
     
     print("Data collection completed successfully via direct download.")
     print(f"Files saved in data/ directory. CPI rows: {len(cpi_monthly)}")
