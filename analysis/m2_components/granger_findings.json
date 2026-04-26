@@ -1,0 +1,18 @@
+{
+    "anomaly": {
+        "M2_causes_FX": {
+            "p_val_lag2": 8.277604618830496e-12
+        },
+        "FX_causes_M2": {
+            "p_val_lag2": 0.8849298950003383
+        }
+    },
+    "normal": {
+        "M2_causes_FX": {
+            "p_val_lag2": 0.17234131128419555
+        },
+        "FX_causes_M2": {
+            "p_val_lag2": 0.9684624283119814
+        }
+    }
+}
