@@ -1,0 +1,10 @@
+VAR Model Forecast Comparison (Test set: 24 months)
+----------------------------------------------------------------------
+Variable                  | Actual FX RMSE  | Predicted FX RMSE | % Diff    
+----------------------------------------------------------------------
+Import_Price_Index        | 0.044915        | 0.045450        |     1.19%
+CPI_KOR                   | 0.016650        | 0.016627        |    -0.14%
+Trade_Balance             | 4980.218791     | 4994.354336     |     0.28%
+Foreign_Stock_Investment  | 4640.555238     | 4671.230486     |     0.66%
+Foreign_Bond_Investment   | 3551.222954     | 3495.970986     |    -1.56%
+KOSPI                     | 0.180063        | 0.180869        |     0.45%

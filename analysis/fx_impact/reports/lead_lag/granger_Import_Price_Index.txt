@@ -1,0 +1,12 @@
+Lag 1: F-test p-value = 0.3292 
+Lag 2: F-test p-value = 0.0027 ***
+Lag 3: F-test p-value = 0.0015 ***
+Lag 4: F-test p-value = 0.0047 ***
+Lag 5: F-test p-value = 0.0105 **
+Lag 6: F-test p-value = 0.0069 ***
+Lag 7: F-test p-value = 0.0105 **
+Lag 8: F-test p-value = 0.0075 ***
+Lag 9: F-test p-value = 0.0111 **
+Lag 10: F-test p-value = 0.0060 ***
+Lag 11: F-test p-value = 0.0043 ***
+Lag 12: F-test p-value = 0.0050 ***

@@ -1,0 +1,10 @@
+VAR Model Baseline Evaluation (Test set: 24 months)
+Optimal Lag: 3
+--------------------------------------------------
+USD_KRW                   - RMSE: 0.034349, MAE: 0.026662
+Import_Price_Index        - RMSE: 0.045522, MAE: 0.032741
+CPI_KOR                   - RMSE: 0.016670, MAE: 0.005646
+Trade_Balance             - RMSE: 4717.104632, MAE: 2050.941667
+Foreign_Stock_Investment  - RMSE: 5059.151368, MAE: 3644.346441
+Foreign_Bond_Investment   - RMSE: 3520.672224, MAE: 2908.569741
+KOSPI                     - RMSE: 0.174149, MAE: 0.067880

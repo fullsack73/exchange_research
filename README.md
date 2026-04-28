@@ -30,7 +30,9 @@
 
 ---
 
-## 환경 설정 및 실행 가이드 (Setup & Reproduction)
+## Roadmap to FX Impact on Other Variables
+
+- [_Roadmap to Predict Variables Impacted by Exchange Rates_\](analysis/roadmap_to_fx_impact_model.md), to clarify model-building aligned research extensions.
 
 본 프로젝트의 코드를 실행하고 실험 결과를 재현하기 위한 가이드입니다.
 
