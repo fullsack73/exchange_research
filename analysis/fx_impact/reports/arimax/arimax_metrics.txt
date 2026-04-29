@@ -1,0 +1,10 @@
+ARIMAX Model Forecast Comparison (Test set: 24 months)
+--------------------------------------------------------------------------------
+Variable                  | Lag | Actual FX RMSE  | Predicted FX RMSE | % Diff    
+--------------------------------------------------------------------------------
+Import_Price_Index        | 2   | 0.046186        | 0.046242        |     0.12%
+KOSPI                     | 1   | 0.171033        | 0.171213        |     0.11%
+Foreign_Bond_Investment   | 1   | 3592.085691     | 3487.794880     |    -2.90%
+Foreign_Stock_Investment  | 1   | 4753.823086     | 4814.039895     |     1.27%
+Trade_Balance             | 6   | 4618.814861     | 4693.992997     |     1.63%
+CPI_KOR                   | 6   | 0.016700        | 0.016715        |     0.09%
