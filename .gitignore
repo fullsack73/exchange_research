@@ -1,2 +1,3 @@
 .openclaude/*
 .env
+*__pycache__*

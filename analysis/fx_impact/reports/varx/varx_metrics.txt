@@ -1,11 +1,13 @@
 VARX Model Forecast Comparison (Test set: 24 months)
 Endogenous Lag: 3, Exogenous Lags: 1-6
+Predictions path: /Applications/dollar_price/analysis/fx_impact/reports/fx_model_selection/selected_fx_predictions.csv
+Prediction column: pred_fx
 ---------------------------------------------------------------------------
 Variable                  | Actual FX RMSE  | Predicted FX RMSE | % Diff    
 ---------------------------------------------------------------------------
-Import_Price_Index        | 0.049393        | 0.047944        |    -2.93%
-CPI_KOR                   | 0.016713        | 0.016792        |     0.48%
-Trade_Balance             | 4801.710909     | 4880.619861     |     1.64%
-Foreign_Stock_Investment  | 5310.784419     | 5209.879157     |    -1.90%
-Foreign_Bond_Investment   | 3872.159621     | 3446.667683     |   -10.99%
-KOSPI                     | 0.166333        | 0.167606        |     0.77%
+Import_Price_Index        | 0.049393        | 0.047968        |    -2.88%
+CPI_KOR                   | 0.016713        | 0.016790        |     0.46%
+Trade_Balance             | 4801.710909     | 4880.909866     |     1.65%
+Foreign_Stock_Investment  | 5310.784419     | 5208.609581     |    -1.92%
+Foreign_Bond_Investment   | 3872.159621     | 3447.766874     |   -10.96%
+KOSPI                     | 0.166333        | 0.167564        |     0.74%

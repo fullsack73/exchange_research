@@ -2,10 +2,21 @@ import pandas as pd
 import numpy as np
 from statsmodels.tsa.arima.model import ARIMA
 from sklearn.metrics import mean_squared_error, mean_absolute_error
-import os
+from pathlib import Path
+import argparse
 import matplotlib.pyplot as plt
 
-def prepare_data(macro_filepath, preds_filepath):
+def select_prediction_column(preds_df, requested=None):
+    if requested:
+        if requested not in preds_df.columns:
+            raise ValueError(f"Prediction column '{requested}' not found in {list(preds_df.columns)}")
+        return requested
+    for col in ["pred_fx", "pred_model_a", "pred_model_b", "pred_arima", "pred_naive"]:
+        if col in preds_df.columns:
+            return col
+    raise ValueError("No prediction column found. Expected one of pred_fx, pred_model_a, pred_model_b, pred_arima, pred_naive.")
+
+def prepare_data(macro_filepath, preds_filepath, prediction_column=None):
     # 1. Load Macro Data
     df = pd.read_csv(macro_filepath)
     df['Date'] = pd.to_datetime(df['Date'])
@@ -21,8 +32,9 @@ def prepare_data(macro_filepath, preds_filepath):
     preds_df = pd.read_csv(preds_filepath)
     preds_df['date'] = pd.to_datetime(preds_df['date'])
     preds_df = preds_df.set_index('date')
+    pred_col = select_prediction_column(preds_df, prediction_column)
     
-    monthly_preds = preds_df['pred_model_b'].resample('ME').mean()
+    monthly_preds = preds_df[pred_col].resample('ME').mean()
     monthly_preds.index = monthly_preds.index + pd.offsets.MonthEnd(0)
     
     # 3. Combine Levels
@@ -45,7 +57,7 @@ def prepare_data(macro_filepath, preds_filepath):
             df_diff[col] = np.log(levels_df[col]).diff()
             
     df_diff = df_diff.dropna()
-    return df_diff
+    return df_diff, pred_col
 
 def run_arimax_for_target(target, lag, df_diff, test_obs=24, report_dir=''):
     print(f"\n--- Running ARIMAX for {target} (Lag: {lag}) ---")
@@ -93,20 +105,25 @@ def run_arimax_for_target(target, lag, df_diff, test_obs=24, report_dir=''):
     plt.title(f'ARIMAX Error Propagation: {target} (Lag {lag})')
     plt.legend()
     plt.grid(True, alpha=0.3)
-    plt.savefig(os.path.join(report_dir, f'arimax_{target}.png'))
+    plt.savefig(report_dir / f'arimax_{target}.png')
     plt.close()
     
     return rmse_act, rmse_pred, diff_pct
 
 def main():
-    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../'))
-    report_dir = os.path.join(os.path.dirname(__file__), 'reports/arimax')
-    os.makedirs(report_dir, exist_ok=True)
+    parser = argparse.ArgumentParser(description="Run per-target ARIMAX error propagation check.")
+    base_dir = Path(__file__).resolve().parents[2]
+    default_selected = Path(__file__).resolve().parent / "reports" / "fx_model_selection" / "selected_fx_predictions.csv"
+    default_legacy = base_dir / "analysis" / "LSTM" / "Hybrid" / "hybrid_m2" / "eval" / "predictions.csv"
+    parser.add_argument("--macro-path", type=Path, default=base_dir / "data" / "integrated_macro_targets.csv")
+    parser.add_argument("--predictions-path", type=Path, default=default_selected if default_selected.exists() else default_legacy)
+    parser.add_argument("--prediction-column", default=None)
+    args = parser.parse_args()
+
+    report_dir = Path(__file__).resolve().parent / "reports" / "arimax"
+    report_dir.mkdir(parents=True, exist_ok=True)
     
-    macro_filepath = os.path.join(base_dir, 'data/integrated_macro_targets.csv')
-    preds_filepath = os.path.join(base_dir, 'analysis/LSTM/Hybrid/hybrid_m2/eval/predictions.csv')
-    
-    df_diff = prepare_data(macro_filepath, preds_filepath)
+    df_diff, pred_col = prepare_data(args.macro_path, args.predictions_path, args.prediction_column)
     
     target_lags = {
         'Import_Price_Index': 2,
@@ -124,8 +141,10 @@ def main():
         r_act, r_pred, diff = run_arimax_for_target(target, lag, df_diff, test_obs, report_dir)
         results[target] = (r_act, r_pred, diff, lag)
         
-    with open(os.path.join(report_dir, 'arimax_metrics.txt'), 'w') as f:
+    with open(report_dir / 'arimax_metrics.txt', 'w') as f:
         f.write(f"ARIMAX Model Forecast Comparison (Test set: {test_obs} months)\n")
+        f.write(f"Predictions path: {args.predictions_path}\n")
+        f.write(f"Prediction column: {pred_col}\n")
         f.write("-" * 80 + "\n")
         f.write(f"{'Variable':<25s} | {'Lag':<3s} | {'Actual FX RMSE':<15s} | {'Predicted FX RMSE':<15s} | {'% Diff':<10s}\n")
         f.write("-" * 80 + "\n")

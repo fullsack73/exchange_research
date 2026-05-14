@@ -2,10 +2,21 @@ import pandas as pd
 import numpy as np
 from statsmodels.tsa.api import VAR
 from sklearn.metrics import mean_squared_error, mean_absolute_error
-import os
+from pathlib import Path
+import argparse
 import matplotlib.pyplot as plt
 
-def prepare_data(macro_filepath, preds_filepath):
+def select_prediction_column(preds_df, requested=None):
+    if requested:
+        if requested not in preds_df.columns:
+            raise ValueError(f"Prediction column '{requested}' not found in {list(preds_df.columns)}")
+        return requested
+    for col in ["pred_fx", "pred_model_a", "pred_model_b", "pred_arima", "pred_naive"]:
+        if col in preds_df.columns:
+            return col
+    raise ValueError("No prediction column found. Expected one of pred_fx, pred_model_a, pred_model_b, pred_arima, pred_naive.")
+
+def prepare_data(macro_filepath, preds_filepath, prediction_column=None):
     # 1. Load Macro Data
     df = pd.read_csv(macro_filepath)
     df['Date'] = pd.to_datetime(df['Date'])
@@ -21,8 +32,9 @@ def prepare_data(macro_filepath, preds_filepath):
     preds_df = pd.read_csv(preds_filepath)
     preds_df['date'] = pd.to_datetime(preds_df['date'])
     preds_df = preds_df.set_index('date')
+    pred_col = select_prediction_column(preds_df, prediction_column)
     
-    monthly_preds = preds_df['pred_model_b'].resample('ME').mean()
+    monthly_preds = preds_df[pred_col].resample('ME').mean()
     monthly_preds.index = monthly_preds.index + pd.offsets.MonthEnd(0)
     
     # 3. Combine Levels
@@ -59,7 +71,7 @@ def prepare_data(macro_filepath, preds_filepath):
         exog_pred_cols.append(col_pred)
         
     df_diff = df_diff.dropna()
-    return df_diff, targets, exog_actual_cols, exog_pred_cols
+    return df_diff, targets, exog_actual_cols, exog_pred_cols, pred_col
 
 def evaluate_forecast(actual, forecast, variables):
     results = {}
@@ -70,18 +82,27 @@ def evaluate_forecast(actual, forecast, variables):
     return results
 
 def main():
-    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../'))
-    report_dir = os.path.join(os.path.dirname(__file__), 'reports/varx')
-    os.makedirs(report_dir, exist_ok=True)
+    parser = argparse.ArgumentParser(description="Run VARX error propagation check.")
+    base_dir = Path(__file__).resolve().parents[2]
+    default_selected = Path(__file__).resolve().parent / "reports" / "fx_model_selection" / "selected_fx_predictions.csv"
+    default_legacy = base_dir / "analysis" / "LSTM" / "Hybrid" / "hybrid_m2" / "eval" / "predictions.csv"
+    parser.add_argument("--macro-path", type=Path, default=base_dir / "data" / "integrated_macro_targets.csv")
+    parser.add_argument("--predictions-path", type=Path, default=default_selected if default_selected.exists() else default_legacy)
+    parser.add_argument("--prediction-column", default=None)
+    args = parser.parse_args()
+
+    report_dir = Path(__file__).resolve().parent / "reports" / "varx"
+    report_dir.mkdir(parents=True, exist_ok=True)
     
-    macro_filepath = os.path.join(base_dir, 'data/integrated_macro_targets.csv')
-    preds_filepath = os.path.join(base_dir, 'analysis/LSTM/Hybrid/hybrid_m2/eval/predictions.csv')
-    
-    if not os.path.exists(macro_filepath) or not os.path.exists(preds_filepath):
+    if not args.macro_path.exists() or not args.predictions_path.exists():
         print("Required files not found.")
         return
         
-    df_diff, targets, exog_actual_cols, exog_pred_cols = prepare_data(macro_filepath, preds_filepath)
+    df_diff, targets, exog_actual_cols, exog_pred_cols, pred_col = prepare_data(
+        args.macro_path,
+        args.predictions_path,
+        args.prediction_column,
+    )
     
     # Train-test split (Test on last 24 months)
     test_obs = 24
@@ -120,9 +141,11 @@ def main():
     metrics_pred = evaluate_forecast(actual, forecast_pred, targets)
     
     # Save results
-    with open(os.path.join(report_dir, 'varx_metrics.txt'), 'w') as f:
+    with open(report_dir / 'varx_metrics.txt', 'w') as f:
         f.write(f"VARX Model Forecast Comparison (Test set: {test_obs} months)\n")
         f.write(f"Endogenous Lag: {best_lag}, Exogenous Lags: 1-6\n")
+        f.write(f"Predictions path: {args.predictions_path}\n")
+        f.write(f"Prediction column: {pred_col}\n")
         f.write("-" * 75 + "\n")
         f.write(f"{'Variable':<25s} | {'Actual FX RMSE':<15s} | {'Predicted FX RMSE':<15s} | {'% Diff':<10s}\n")
         f.write("-" * 75 + "\n")
@@ -145,7 +168,7 @@ def main():
         plt.title(f'VARX Error Propagation: {var}')
         plt.legend()
         plt.grid(True, alpha=0.3)
-        plt.savefig(os.path.join(report_dir, f'varx_{var}.png'))
+        plt.savefig(report_dir / f'varx_{var}.png')
         plt.close()
         
     print(f"\nVARX modeling complete. Results saved in '{report_dir}'.")
