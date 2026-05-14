@@ -18,7 +18,7 @@ import pandas as pd
 from scipy.stats import pearsonr
 from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.inspection import permutation_importance
-from sklearn.linear_model import ElasticNetCV, Ridge
+from sklearn.linear_model import ElasticNet, ElasticNetCV, Ridge
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.preprocessing import StandardScaler
@@ -36,6 +36,8 @@ MAX_LAG = 6
 TEST_OBS = 24
 MIN_TARGET_OBS = 48
 FINAL_TARGET_LIMIT = 8
+LP_HORIZONS = tuple(range(1, 7))
+LP_TEST_FRACTION = 0.25
 
 SCRIPT_PATH = Path(__file__).resolve()
 FX_IMPACT_DIR = SCRIPT_PATH.parent
@@ -46,6 +48,8 @@ TARGET_REPORT_DIR = REPORT_DIR / "target_selection"
 FX_MODEL_REPORT_DIR = REPORT_DIR / "fx_model_selection"
 FINAL_REPORT_DIR = REPORT_DIR / "final"
 ANOMALY_SET_REPORT_DIR = FINAL_REPORT_DIR / "anomaly_set"
+EVENT_PANEL_REPORT_DIR = FINAL_REPORT_DIR / "event_panel"
+EVENT_PANEL_PLOT_DIR = EVENT_PANEL_REPORT_DIR / "plots"
 
 MACRO_PATH = DATA_DIR / "integrated_macro_targets.csv"
 PERIOD_DEF_PATH = BASE_DIR / "analysis" / "anomaly" / "period_definition.json"
@@ -103,6 +107,8 @@ def ensure_dirs() -> None:
         FINAL_REPORT_DIR / "plots",
         ANOMALY_SET_REPORT_DIR,
         ANOMALY_SET_REPORT_DIR / "plots",
+        EVENT_PANEL_REPORT_DIR,
+        EVENT_PANEL_PLOT_DIR,
     ]:
         path.mkdir(parents=True, exist_ok=True)
 
@@ -791,6 +797,8 @@ def load_prediction_candidates() -> dict[str, pd.DataFrame]:
 
 
 def monthly_prediction_path(macro_df: pd.DataFrame, pred_df: pd.DataFrame) -> pd.Series:
+    pred_df = pred_df.copy()
+    pred_df["date"] = pd.to_datetime(pred_df["date"])
     monthly = pred_df.set_index("date")["pred_fx"].resample("ME").mean()
     monthly.index = monthly.index + pd.offsets.MonthEnd(0)
     macro_fx = macro_df.set_index("Date")["USD_KRW"].copy()
@@ -1815,6 +1823,653 @@ def run_anomaly_concat_analysis(
     return model_comparison, forecast_df, lag_summary, scenario_df
 
 
+def lp_feature_columns() -> list[str]:
+    return ["fx_shock_t"] + [f"fx_lag{lag}" for lag in range(1, MAX_LAG + 1)] + ["target_lag1"]
+
+
+def response_to_level_delta(start_level: float, response: float, transform: str) -> float:
+    if not np.isfinite(start_level) or not np.isfinite(response):
+        return np.nan
+    if transform == "log_diff":
+        if start_level <= 0:
+            return np.nan
+        return float(start_level * (np.exp(response) - 1.0))
+    return float(response)
+
+
+def build_event_fx_feature_frame(
+    macro_df: pd.DataFrame,
+    selected_predictions: pd.DataFrame,
+    scenario_shock_pct: float,
+) -> pd.DataFrame:
+    idx = pd.to_datetime(macro_df["Date"]) + pd.offsets.MonthEnd(0)
+    actual_fx = pd.Series(pd.to_numeric(macro_df["USD_KRW"], errors="coerce").to_numpy(dtype=float), index=idx)
+    predicted_fx = monthly_prediction_path(macro_df, selected_predictions).reindex(idx)
+
+    actual_fx_change = transform_series(actual_fx, "log_diff")
+    pred_fx_change = transform_series(predicted_fx, "log_diff")
+    scenario_fx = predicted_fx * (1.0 + scenario_shock_pct)
+    scenario_fx_change = np.log(scenario_fx.where(scenario_fx > 0)) - np.log(predicted_fx.shift(1).where(predicted_fx.shift(1) > 0))
+
+    frame = pd.DataFrame(
+        {
+            "actual_fx_t": actual_fx,
+            "pred_fx_t": predicted_fx,
+            "scenario_fx_t": scenario_fx,
+            "actual_fx_change_t": actual_fx_change,
+            "pred_fx_change_t": pred_fx_change,
+            "scenario_fx_change_t": scenario_fx_change,
+        },
+        index=idx,
+    )
+    for lag in range(1, MAX_LAG + 1):
+        frame[f"fx_lag{lag}_actual"] = actual_fx_change.shift(lag)
+        frame[f"fx_lag{lag}_predicted"] = pred_fx_change.shift(lag)
+        frame[f"fx_lag{lag}_scenario"] = pred_fx_change.shift(lag)
+    return frame
+
+
+def build_event_time_panel(
+    macro_df: pd.DataFrame,
+    selected_targets: list[str],
+    selected_predictions: pd.DataFrame,
+    selected_source: str,
+    scenario_shock_pct: float,
+    horizons: tuple[int, ...] = LP_HORIZONS,
+) -> pd.DataFrame:
+    macro = macro_df.copy()
+    macro["Date"] = pd.to_datetime(macro["Date"]) + pd.offsets.MonthEnd(0)
+    macro = macro.sort_values("Date").drop_duplicates("Date").set_index("Date")
+    fx_features = build_event_fx_feature_frame(macro.reset_index(), selected_predictions, scenario_shock_pct)
+    anomaly_dates = macro.index[macro["Is_Abnormal_Period"].eq(1)]
+
+    rows: list[dict[str, Any]] = []
+    for target in selected_targets:
+        if target not in macro.columns:
+            continue
+        target_level = pd.to_numeric(macro[target], errors="coerce")
+        transform = choose_target_transform(target_level, target)
+        target_change = transform_series(target_level, transform.transform)
+        target_lag1 = target_change.shift(1)
+        unit_label = "log_change_horizon" if transform.transform == "log_diff" else "unit_delta_horizon"
+
+        for event_date in anomaly_dates:
+            if event_date not in fx_features.index:
+                continue
+            target_t = target_level.get(event_date, np.nan)
+            if not np.isfinite(target_t):
+                continue
+            feature_row = fx_features.loc[event_date]
+            base_values = {
+                "target_lag1": target_lag1.get(event_date, np.nan),
+                "target_change_t": target_change.get(event_date, np.nan),
+                **feature_row.to_dict(),
+            }
+            required_base = [
+                "target_lag1",
+                "target_change_t",
+                "actual_fx_t",
+                "pred_fx_t",
+                "scenario_fx_t",
+                "actual_fx_change_t",
+                "pred_fx_change_t",
+                "scenario_fx_change_t",
+                *[f"fx_lag{lag}_actual" for lag in range(1, MAX_LAG + 1)],
+                *[f"fx_lag{lag}_predicted" for lag in range(1, MAX_LAG + 1)],
+                *[f"fx_lag{lag}_scenario" for lag in range(1, MAX_LAG + 1)],
+            ]
+            if any(not np.isfinite(base_values.get(col, np.nan)) for col in required_base):
+                continue
+
+            for horizon in horizons:
+                response_date = event_date + pd.offsets.MonthEnd(horizon)
+                if response_date not in macro.index:
+                    continue
+                target_future = target_level.get(response_date, np.nan)
+                if not np.isfinite(target_future):
+                    continue
+                if transform.transform == "log_diff":
+                    if target_t <= 0 or target_future <= 0:
+                        continue
+                    actual_response = float(np.log(target_future) - np.log(target_t))
+                else:
+                    actual_response = float(target_future - target_t)
+                level_delta = float(target_future - target_t)
+                rows.append(
+                    {
+                        "event_date": event_date,
+                        "response_date": response_date,
+                        "target": target,
+                        "horizon": int(horizon),
+                        "actual_fx_t": base_values["actual_fx_t"],
+                        "pred_fx_t": base_values["pred_fx_t"],
+                        "scenario_fx_t": base_values["scenario_fx_t"],
+                        "actual_fx_change_t": base_values["actual_fx_change_t"],
+                        "pred_fx_change_t": base_values["pred_fx_change_t"],
+                        "scenario_fx_change_t": base_values["scenario_fx_change_t"],
+                        **{f"fx_lag{lag}_actual": base_values[f"fx_lag{lag}_actual"] for lag in range(1, MAX_LAG + 1)},
+                        **{
+                            f"fx_lag{lag}_predicted": base_values[f"fx_lag{lag}_predicted"]
+                            for lag in range(1, MAX_LAG + 1)
+                        },
+                        **{
+                            f"fx_lag{lag}_scenario": base_values[f"fx_lag{lag}_scenario"]
+                            for lag in range(1, MAX_LAG + 1)
+                        },
+                        "target_level_t": float(target_t),
+                        "target_level_t_plus_h": float(target_future),
+                        "target_lag1": base_values["target_lag1"],
+                        "target_change_t": base_values["target_change_t"],
+                        "actual_response": actual_response,
+                        "actual_response_level_delta": level_delta,
+                        "transform": transform.transform,
+                        "unit_label": unit_label,
+                        "is_abnormal_period": int(macro.at[event_date, "Is_Abnormal_Period"]),
+                        "source_model": selected_source,
+                    }
+                )
+
+    panel = pd.DataFrame(rows)
+    if panel.empty:
+        return panel
+    return panel.sort_values(["target", "horizon", "event_date"]).reset_index(drop=True)
+
+
+def build_lp_features(panel: pd.DataFrame, fx_mode: str) -> pd.DataFrame:
+    mode_change_cols = {
+        "actual": "actual_fx_change_t",
+        "predicted": "pred_fx_change_t",
+        "scenario": "scenario_fx_change_t",
+    }
+    if fx_mode not in mode_change_cols:
+        raise ValueError(f"Unsupported LP FX mode: {fx_mode}")
+    out = pd.DataFrame(index=panel.index)
+    out["fx_shock_t"] = pd.to_numeric(panel[mode_change_cols[fx_mode]], errors="coerce")
+    for lag in range(1, MAX_LAG + 1):
+        out[f"fx_lag{lag}"] = pd.to_numeric(panel[f"fx_lag{lag}_{fx_mode}"], errors="coerce")
+    out["target_lag1"] = pd.to_numeric(panel["target_lag1"], errors="coerce")
+    return out[lp_feature_columns()]
+
+
+def split_lp_train_test(group: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    unique_dates = pd.Series(pd.to_datetime(group["event_date"]).unique()).sort_values().to_list()
+    feature_count = len(lp_feature_columns())
+    min_train_events = max(feature_count + 8, 20)
+    if len(unique_dates) < min_train_events + 3:
+        return pd.DataFrame(), pd.DataFrame()
+    test_events = max(3, int(math.ceil(len(unique_dates) * LP_TEST_FRACTION)))
+    if len(unique_dates) - test_events < min_train_events:
+        test_events = len(unique_dates) - min_train_events
+    if test_events < 3:
+        return pd.DataFrame(), pd.DataFrame()
+    test_start = unique_dates[-test_events]
+    train = group[pd.to_datetime(group["event_date"]).lt(test_start)].copy()
+    test = group[pd.to_datetime(group["event_date"]).ge(test_start)].copy()
+    return train, test
+
+
+def original_scale_linear_coefficients(
+    model: Ridge | ElasticNet | ElasticNetCV,
+    scaler: StandardScaler,
+    feature_cols: list[str],
+) -> dict[str, float]:
+    scale = np.where(scaler.scale_ == 0, 1.0, scaler.scale_)
+    coefficients = np.asarray(model.coef_, dtype=float) / scale
+    intercept = float(model.intercept_ - np.sum(np.asarray(model.coef_, dtype=float) * scaler.mean_ / scale))
+    out = {"intercept": intercept}
+    out.update({feature: float(value) for feature, value in zip(feature_cols, coefficients)})
+    return out
+
+
+def fit_local_projection_estimators(
+    train_x: pd.DataFrame,
+    train_y: pd.Series,
+    horizon: int,
+) -> list[dict[str, Any]]:
+    feature_cols = lp_feature_columns()
+    estimators: list[dict[str, Any]] = []
+    if len(train_x) <= len(feature_cols) + 2:
+        return estimators
+
+    x_ols = add_constant(train_x[feature_cols], has_constant="add")
+    try:
+        cov_lags = max(1, min(int(horizon), len(train_x) // 4))
+        ols_model = OLS(train_y, x_ols).fit(cov_type="HAC", cov_kwds={"maxlags": cov_lags})
+        coefficients = {"intercept": float(ols_model.params.get("const", np.nan))}
+        coefficients.update({feature: float(ols_model.params.get(feature, np.nan)) for feature in feature_cols})
+        pvalues = {"intercept": float(ols_model.pvalues.get("const", np.nan))}
+        pvalues.update({feature: float(ols_model.pvalues.get(feature, np.nan)) for feature in feature_cols})
+        estimators.append(
+            {
+                "name": "LocalProjection_OLS",
+                "kind": "ols",
+                "model": ols_model,
+                "scaler": None,
+                "coefficients": coefficients,
+                "pvalues": pvalues,
+            }
+        )
+    except Exception:
+        pass
+
+    scaler = StandardScaler()
+    x_scaled = scaler.fit_transform(train_x[feature_cols])
+
+    ridge = Ridge(alpha=1.0)
+    ridge.fit(x_scaled, train_y)
+    estimators.append(
+        {
+            "name": "LocalProjection_Ridge",
+            "kind": "scaled_linear",
+            "model": ridge,
+            "scaler": scaler,
+            "coefficients": original_scale_linear_coefficients(ridge, scaler, feature_cols),
+            "pvalues": {feature: np.nan for feature in ["intercept", *feature_cols]},
+        }
+    )
+
+    try:
+        if len(train_x) >= 30:
+            n_splits = min(5, max(2, len(train_x) // 12))
+            elastic = ElasticNetCV(
+                l1_ratio=[0.1, 0.3, 0.5, 0.7],
+                alphas=np.logspace(-5, 1, 40),
+                cv=TimeSeriesSplit(n_splits=n_splits),
+                random_state=RANDOM_STATE,
+                max_iter=30000,
+            )
+        else:
+            elastic = ElasticNet(alpha=0.01, l1_ratio=0.3, random_state=RANDOM_STATE, max_iter=30000)
+        elastic.fit(x_scaled, train_y)
+        estimators.append(
+            {
+                "name": "LocalProjection_ElasticNet",
+                "kind": "scaled_linear",
+                "model": elastic,
+                "scaler": scaler,
+                "coefficients": original_scale_linear_coefficients(elastic, scaler, feature_cols),
+                "pvalues": {feature: np.nan for feature in ["intercept", *feature_cols]},
+            }
+        )
+    except Exception:
+        pass
+
+    return estimators
+
+
+def predict_local_projection(estimator: dict[str, Any], x: pd.DataFrame) -> np.ndarray:
+    feature_cols = lp_feature_columns()
+    if estimator["kind"] == "ols":
+        x_model = add_constant(x[feature_cols], has_constant="add")
+        return np.asarray(estimator["model"].predict(x_model), dtype=float)
+    scaler = estimator["scaler"]
+    return np.asarray(estimator["model"].predict(scaler.transform(x[feature_cols])), dtype=float)
+
+
+def run_event_time_local_projection_models(
+    event_panel: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    coefficient_rows: list[dict[str, Any]] = []
+    forecast_rows: list[dict[str, Any]] = []
+    if event_panel.empty:
+        return pd.DataFrame(coefficient_rows), pd.DataFrame(forecast_rows)
+
+    for (target, horizon), group in event_panel.groupby(["target", "horizon"], sort=True):
+        group = group.sort_values("event_date").reset_index(drop=True)
+        train, test = split_lp_train_test(group)
+        if train.empty or test.empty:
+            continue
+
+        train_x = build_lp_features(train, "actual")
+        train_y = pd.to_numeric(train["actual_response"], errors="coerce")
+        valid_train = train_x.notna().all(axis=1) & train_y.notna()
+        train_x = train_x.loc[valid_train]
+        train_y = train_y.loc[valid_train]
+        if len(train_x) <= len(lp_feature_columns()) + 2:
+            continue
+
+        estimators = fit_local_projection_estimators(train_x, train_y, int(horizon))
+        test_rows = len(test)
+        for estimator in estimators:
+            for feature, coefficient in estimator["coefficients"].items():
+                coefficient_rows.append(
+                    {
+                        "target": target,
+                        "horizon": int(horizon),
+                        "model": estimator["name"],
+                        "feature": feature,
+                        "coefficient": coefficient,
+                        "pvalue": estimator["pvalues"].get(feature, np.nan),
+                        "train_rows": int(len(train_x)),
+                        "test_rows": int(test_rows),
+                    }
+                )
+
+            for fx_mode in ["actual", "predicted", "scenario"]:
+                test_x = build_lp_features(test, fx_mode)
+                valid_test = test_x.notna().all(axis=1) & pd.to_numeric(test["actual_response"], errors="coerce").notna()
+                if not valid_test.any():
+                    continue
+                test_valid = test.loc[valid_test].copy()
+                x_valid = test_x.loc[valid_test]
+                predictions = predict_local_projection(estimator, x_valid)
+                for row, prediction in zip(test_valid.to_dict("records"), predictions):
+                    predicted_level_delta = response_to_level_delta(
+                        float(row["target_level_t"]),
+                        float(prediction),
+                        row["transform"],
+                    )
+                    forecast_rows.append(
+                        {
+                            "event_date": row["event_date"],
+                            "response_date": row["response_date"],
+                            "target": target,
+                            "horizon": int(horizon),
+                            "model": estimator["name"],
+                            "fx_mode": fx_mode,
+                            "actual_response": row["actual_response"],
+                            "predicted_response": float(prediction),
+                            "actual_level_delta": row["actual_response_level_delta"],
+                            "predicted_level_delta": predicted_level_delta,
+                            "target_level_t": row["target_level_t"],
+                            "transform": row["transform"],
+                            "unit_label": row["unit_label"],
+                            "source_model": row["source_model"],
+                            "train_rows": int(len(train_x)),
+                            "test_rows": int(test_rows),
+                        }
+                    )
+
+    return pd.DataFrame(coefficient_rows), pd.DataFrame(forecast_rows)
+
+
+def build_event_lp_metrics(forecast_df: pd.DataFrame) -> pd.DataFrame:
+    if forecast_df.empty:
+        return pd.DataFrame()
+    rows = []
+    for keys, group in forecast_df.groupby(["target", "horizon", "model", "fx_mode", "transform", "unit_label"], dropna=False):
+        target, horizon, model, fx_mode, transform, unit_label = keys
+        clean = group.dropna(
+            subset=["actual_response", "predicted_response", "actual_level_delta", "predicted_level_delta"]
+        ).copy()
+        if clean.empty:
+            continue
+        rmse_response = float(np.sqrt(mean_squared_error(clean["actual_response"], clean["predicted_response"])))
+        rmse_level = float(np.sqrt(mean_squared_error(clean["actual_level_delta"], clean["predicted_level_delta"])))
+        response_std = max(float(clean["actual_response"].std(ddof=0)), 1e-12)
+        rows.append(
+            {
+                "target": target,
+                "horizon": int(horizon),
+                "model": model,
+                "fx_mode": fx_mode,
+                "transform": transform,
+                "unit_label": unit_label,
+                "rmse_response": rmse_response,
+                "mae_response": float(mean_absolute_error(clean["actual_response"], clean["predicted_response"])),
+                "nrmse_response": rmse_response / response_std,
+                "rmse_level_delta": rmse_level,
+                "mae_level_delta": float(mean_absolute_error(clean["actual_level_delta"], clean["predicted_level_delta"])),
+                "test_rows": int(len(clean)),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def build_event_scenario_response_forecasts(forecast_df: pd.DataFrame, scenario_shock_pct: float) -> pd.DataFrame:
+    if forecast_df.empty:
+        return pd.DataFrame()
+    key_cols = ["event_date", "response_date", "target", "horizon", "model", "transform", "unit_label", "source_model"]
+    baseline = forecast_df[forecast_df["fx_mode"].eq("predicted")].copy()
+    scenario = forecast_df[forecast_df["fx_mode"].eq("scenario")].copy()
+    if baseline.empty or scenario.empty:
+        return pd.DataFrame()
+    merged = scenario.merge(
+        baseline[key_cols + ["actual_response", "predicted_response", "actual_level_delta", "predicted_level_delta"]],
+        on=key_cols,
+        how="inner",
+        suffixes=("_scenario", "_baseline"),
+    )
+    merged["scenario_shock_pct"] = scenario_shock_pct
+    merged["response_delta_vs_predicted"] = merged["predicted_response_scenario"] - merged["predicted_response_baseline"]
+    merged["level_delta_vs_predicted"] = merged["predicted_level_delta_scenario"] - merged["predicted_level_delta_baseline"]
+    return merged[
+        [
+            *key_cols,
+            "scenario_shock_pct",
+            "actual_response_baseline",
+            "actual_level_delta_baseline",
+            "predicted_response_baseline",
+            "predicted_response_scenario",
+            "response_delta_vs_predicted",
+            "predicted_level_delta_baseline",
+            "predicted_level_delta_scenario",
+            "level_delta_vs_predicted",
+        ]
+    ].rename(
+        columns={
+            "actual_response_baseline": "actual_response",
+            "actual_level_delta_baseline": "actual_level_delta",
+        }
+    )
+
+
+def select_event_panel_models(metrics: pd.DataFrame) -> pd.DataFrame:
+    if metrics.empty:
+        return pd.DataFrame()
+    predicted = metrics[metrics["fx_mode"].eq("predicted")].copy()
+    if predicted.empty:
+        return pd.DataFrame()
+
+    target_rows = (
+        predicted.groupby(["target", "model"], as_index=False)
+        .agg(
+            avg_rmse_response=("rmse_response", "mean"),
+            avg_nrmse_response=("nrmse_response", "mean"),
+            avg_rmse_level_delta=("rmse_level_delta", "mean"),
+            total_test_rows=("test_rows", "sum"),
+            horizons=("horizon", "nunique"),
+        )
+        .assign(selection_scope="target")
+    )
+    target_rows["rank"] = target_rows.groupby("target")["avg_nrmse_response"].rank(method="first")
+    target_rows["selected_for_plot"] = target_rows["rank"].eq(1)
+
+    overall_rows = (
+        predicted.groupby("model", as_index=False)
+        .agg(
+            avg_rmse_response=("rmse_response", "mean"),
+            avg_nrmse_response=("nrmse_response", "mean"),
+            avg_rmse_level_delta=("rmse_level_delta", "mean"),
+            total_test_rows=("test_rows", "sum"),
+            horizons=("horizon", "nunique"),
+            targets=("target", "nunique"),
+        )
+        .assign(target="__ALL__", selection_scope="overall")
+    )
+    overall_rows["rank"] = overall_rows["avg_nrmse_response"].rank(method="first")
+    overall_rows["selected_for_plot"] = overall_rows["rank"].eq(1)
+    if "targets" not in target_rows.columns:
+        target_rows["targets"] = 1
+    return pd.concat([target_rows, overall_rows], axis=0, ignore_index=True).sort_values(
+        ["selection_scope", "target", "rank"]
+    )
+
+
+def plot_event_response_curves(
+    forecast_df: pd.DataFrame,
+    scenario_df: pd.DataFrame,
+    model_selection: pd.DataFrame,
+    selected_targets: list[str],
+    scenario_shock_pct: float,
+) -> None:
+    if forecast_df.empty or model_selection.empty:
+        return
+
+    selected_models = (
+        model_selection[
+            model_selection["selection_scope"].eq("target")
+            & model_selection["selected_for_plot"].eq(True)
+            & ~model_selection["target"].eq("__ALL__")
+        ]
+        .set_index("target")["model"]
+        .to_dict()
+    )
+    mode_labels = {
+        "actual": "LP prediction using actual FX",
+        "predicted": "LP prediction using hybrid FX",
+        "scenario": f"LP prediction using +{scenario_shock_pct * 100:.1f}% FX scenario",
+    }
+    mode_styles = {
+        "actual": {"color": "#4c78a8", "linestyle": "--", "marker": "s"},
+        "predicted": {"color": "#f58518", "linestyle": ":", "marker": "^"},
+        "scenario": {"color": "#54a24b", "linestyle": "-.", "marker": "D"},
+    }
+
+    for target in selected_targets:
+        model = selected_models.get(target)
+        if model is None:
+            continue
+        part = forecast_df[forecast_df["target"].eq(target) & forecast_df["model"].eq(model)].copy()
+        if part.empty:
+            continue
+        transform = part["transform"].iloc[0]
+        unit_label = part["unit_label"].iloc[0]
+        unit_description = (
+            "cumulative log change over h months"
+            if transform == "log_diff"
+            else "level delta over h months"
+        )
+        test_event_count = part["event_date"].nunique()
+
+        actual = part[["event_date", "horizon", "actual_response"]].drop_duplicates()
+        actual_summary = actual.groupby("horizon")["actual_response"].agg(["mean", lambda x: x.quantile(0.10), lambda x: x.quantile(0.90)])
+        actual_summary.columns = ["mean", "p10", "p90"]
+
+        fig, ax = plt.subplots(figsize=(9.5, 5.6))
+        horizons = np.array(LP_HORIZONS, dtype=int)
+        actual_summary = actual_summary.reindex(horizons)
+        ax.fill_between(
+            horizons,
+            actual_summary["p10"].to_numpy(dtype=float),
+            actual_summary["p90"].to_numpy(dtype=float),
+            color="#b8b8b8",
+            alpha=0.25,
+            label="Actual test event P10-P90",
+        )
+        ax.plot(
+            horizons,
+            actual_summary["mean"].to_numpy(dtype=float),
+            color="black",
+            linewidth=2.0,
+            marker="o",
+            label="Actual mean response on test events",
+        )
+
+        for mode in ["actual", "predicted", "scenario"]:
+            mode_summary = part[part["fx_mode"].eq(mode)].groupby("horizon")["predicted_response"].mean().reindex(horizons)
+            if mode_summary.dropna().empty:
+                continue
+            ax.plot(
+                horizons,
+                mode_summary.to_numpy(dtype=float),
+                linewidth=1.8,
+                label=mode_labels[mode],
+                **mode_styles[mode],
+            )
+
+        ax.axhline(0, color="#333333", linewidth=0.9)
+        ax.set_title(f"{target}: event-time local projection ({unit_label}, {model}, n={test_event_count} test events)")
+        ax.set_xlabel("Horizon after anomaly event month")
+        ax.set_ylabel(unit_description)
+        ax.set_xticks(horizons)
+        ax.grid(alpha=0.25)
+        ax.legend(fontsize=8)
+        fig.tight_layout()
+        out_name = f"response_{safe_filename(target)}.png"
+        fig.savefig(EVENT_PANEL_PLOT_DIR / out_name, dpi=150)
+        fig.savefig(FINAL_REPORT_DIR / "plots" / out_name, dpi=150)
+        plt.close(fig)
+
+    if scenario_df.empty:
+        return
+    peak_rows = []
+    for target in selected_targets:
+        model = selected_models.get(target)
+        part = scenario_df[scenario_df["target"].eq(target) & scenario_df["model"].eq(model)].copy()
+        if part.empty:
+            continue
+        peak = part.assign(abs_delta=part["response_delta_vs_predicted"].abs()).sort_values("abs_delta", ascending=False).iloc[0]
+        peak_rows.append(
+            {
+                "target": target,
+                "model": model,
+                "horizon": int(peak["horizon"]),
+                "peak_response_delta": float(peak["response_delta_vs_predicted"]),
+            }
+        )
+    if not peak_rows:
+        return
+    peak_df = pd.DataFrame(peak_rows).sort_values("peak_response_delta")
+    colors = np.where(peak_df["peak_response_delta"].ge(0), "#54a24b", "#e45756")
+    fig, ax = plt.subplots(figsize=(10, 5.8))
+    ax.barh(peak_df["target"], peak_df["peak_response_delta"], color=colors)
+    for y_pos, row in enumerate(peak_df.to_dict("records")):
+        offset = 0.01 * max(peak_df["peak_response_delta"].abs().max(), 1e-12)
+        x_pos = row["peak_response_delta"] + (offset if row["peak_response_delta"] >= 0 else -offset)
+        ha = "left" if row["peak_response_delta"] >= 0 else "right"
+        ax.text(x_pos, y_pos, f"h={row['horizon']}", va="center", ha=ha, fontsize=8)
+    ax.axvline(0, color="#333333", linewidth=0.9)
+    ax.set_title(f"Scenario-baseline peak response delta by target (+{scenario_shock_pct * 100:.1f}% USD/KRW at event month)")
+    ax.set_xlabel("Peak response delta vs hybrid FX baseline")
+    ax.grid(axis="x", alpha=0.25)
+    fig.tight_layout()
+    fig.savefig(EVENT_PANEL_PLOT_DIR / "response_summary_top_targets.png", dpi=150)
+    fig.savefig(FINAL_REPORT_DIR / "plots" / "response_summary_top_targets.png", dpi=150)
+    plt.close(fig)
+
+
+def run_event_time_local_projection_analysis(
+    macro_df: pd.DataFrame,
+    ranking: pd.DataFrame,
+    selected_predictions: pd.DataFrame,
+    selected_source: str,
+    scenario_shock_pct: float,
+) -> dict[str, pd.DataFrame]:
+    selected_targets = ranking[ranking["selected_for_final_model"]]["target"].tolist()
+    event_panel = build_event_time_panel(
+        macro_df,
+        selected_targets,
+        selected_predictions,
+        selected_source,
+        scenario_shock_pct=scenario_shock_pct,
+    )
+    event_panel.to_csv(EVENT_PANEL_REPORT_DIR / "anomaly_event_panel.csv", index=False)
+
+    coefficients, forecasts = run_event_time_local_projection_models(event_panel)
+    coefficients.to_csv(EVENT_PANEL_REPORT_DIR / "local_projection_coefficients.csv", index=False)
+    forecasts.to_csv(EVENT_PANEL_REPORT_DIR / "event_response_forecasts.csv", index=False)
+
+    metrics = build_event_lp_metrics(forecasts)
+    metrics.to_csv(EVENT_PANEL_REPORT_DIR / "local_projection_metrics.csv", index=False)
+
+    scenario = build_event_scenario_response_forecasts(forecasts, scenario_shock_pct)
+    scenario.to_csv(EVENT_PANEL_REPORT_DIR / "scenario_response_forecasts.csv", index=False)
+
+    model_selection = select_event_panel_models(metrics)
+    model_selection.to_csv(EVENT_PANEL_REPORT_DIR / "event_panel_model_selection.csv", index=False)
+
+    plot_event_response_curves(forecasts, scenario, model_selection, selected_targets, scenario_shock_pct)
+    return {
+        "event_panel": event_panel,
+        "coefficients": coefficients,
+        "forecasts": forecasts,
+        "metrics": metrics,
+        "scenario": scenario,
+        "model_selection": model_selection,
+    }
+
+
 def run_final_impact_models(
     macro_df: pd.DataFrame,
     ranking: pd.DataFrame,
@@ -1861,23 +2516,8 @@ def run_final_impact_models(
     lag_summary = build_lag_effect_summary(ranking, selected_targets, scenario_df)
     lag_summary.to_csv(FINAL_REPORT_DIR / "lag_effect_summary.csv", index=False)
 
-    anomaly_model_comparison, anomaly_forecast_df, anomaly_lag_summary, anomaly_scenario_df = run_anomaly_concat_analysis(
-        macro_df,
-        ranking,
-        selected_predictions,
-        selected_source,
-        scenario_shock_pct=scenario_shock_pct,
-        test_obs=test_obs,
-    )
-    write_final_result_md(
-        ranking,
-        selected_source,
-        model_comparison,
-        lag_summary,
-        scenario_shock_pct,
-        anomaly_model_comparison=anomaly_model_comparison,
-        anomaly_lag_summary=anomaly_lag_summary,
-    )
+    # Calendar-time comparison tables are preserved here. The final result.md and
+    # user-facing plots are written by the event-time local projection layer.
     return model_comparison, forecast_df, lag_summary, scenario_df
 
 
@@ -2028,6 +2668,209 @@ def write_final_result_md(
     (FX_IMPACT_DIR / "result.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def write_event_panel_result_md(
+    ranking: pd.DataFrame,
+    selected_source: str,
+    scenario_shock_pct: float,
+    event_outputs: dict[str, pd.DataFrame],
+) -> None:
+    selected = ranking[ranking["selected_for_final_model"]].copy()
+    selected_targets = selected["target"].tolist()
+    event_panel = event_outputs["event_panel"]
+    metrics = event_outputs["metrics"]
+    scenario = event_outputs["scenario"]
+    model_selection = event_outputs["model_selection"]
+
+    event_months = int(event_panel["event_date"].nunique()) if not event_panel.empty else 0
+    panel_rows = int(len(event_panel))
+    horizons = (
+        ", ".join(str(int(h)) for h in sorted(event_panel["horizon"].dropna().unique()))
+        if not event_panel.empty
+        else "1-6"
+    )
+    source_models = sorted(event_panel["source_model"].dropna().unique().tolist()) if not event_panel.empty else [selected_source]
+    selected_model_rows = (
+        model_selection[
+            model_selection["selection_scope"].eq("target")
+            & model_selection["selected_for_plot"].eq(True)
+            & ~model_selection["target"].eq("__ALL__")
+        ].copy()
+        if not model_selection.empty
+        else pd.DataFrame()
+    )
+    selected_model_by_target = selected_model_rows.set_index("target")["model"].to_dict() if not selected_model_rows.empty else {}
+    overall_rows = (
+        model_selection[model_selection["selection_scope"].eq("overall")].sort_values("rank")
+        if not model_selection.empty
+        else pd.DataFrame()
+    )
+
+    scenario_peaks: dict[str, dict[str, Any]] = {}
+    if not scenario.empty:
+        for target, model in selected_model_by_target.items():
+            part = scenario[scenario["target"].eq(target) & scenario["model"].eq(model)].copy()
+            if part.empty:
+                continue
+            peak = part.assign(abs_delta=part["response_delta_vs_predicted"].abs()).sort_values(
+                "abs_delta", ascending=False
+            ).iloc[0]
+            scenario_peaks[target] = peak.to_dict()
+
+    median_nrmse = (
+        float(selected_model_rows["avg_nrmse_response"].median())
+        if not selected_model_rows.empty
+        else np.nan
+    )
+    stable_targets = []
+    unstable_targets = []
+    for row in selected_model_rows.to_dict("records"):
+        label = row["target"]
+        if np.isfinite(median_nrmse) and row["avg_nrmse_response"] <= median_nrmse:
+            stable_targets.append(label)
+        else:
+            unstable_targets.append(label)
+
+    lines = [
+        "# FX Impact Final Pipeline Result",
+        "",
+        "## Purpose",
+        "",
+        "Estimate how domestic macro/financial targets respond after an anomaly-month USD/KRW movement, with the model answering: if FX changes at event month `t`, what is the target response at horizons `h=1..6` months?",
+        "",
+        "## Why The Previous Anomaly-Concat Forecast Was Problematic",
+        "",
+        "- A continuous monthly forecast mostly measured ordinary calendar-time forecasting skill, not anomaly-conditional spillovers.",
+        "- Filtering anomaly months and stitching them into one sequence removed real calendar gaps, so `shift(1)` could jump across disconnected months and distort lags.",
+        "- Level-path forecast plots made the core question hard to read because they emphasized path fit rather than `h`-month response after an FX event.",
+        "",
+        "## Event-Time Local Projection",
+        "",
+        "- The new final layer builds an event-time panel at `(event_date, target, horizon)` granularity.",
+        "- `event_date` rows are limited to `Is_Abnormal_Period == 1` months.",
+        "- All lag and response values are read from the original monthly calendar index: `t-1`, `t-6`, and `t+h` are never computed on a stitched anomaly-only sequence.",
+        "- The response is cumulative from event month `t` to `t+h`: log-level targets use `log(target_{t+h}) - log(target_t)`; differenced targets use `target_{t+h} - target_t`.",
+        "",
+        "## Data Configuration",
+        "",
+        f"- Anomaly event months used by the panel: `{event_months}`",
+        f"- Event-time panel rows after horizon and missing-value drops: `{panel_rows}`",
+        f"- Horizons: `{horizons}` months",
+        f"- Selected targets: {', '.join(f'`{target}`' for target in selected_targets)}",
+        f"- FX input source: `{', '.join(source_models)}`",
+        "- Daily selected FX predictions are resampled to month-end monthly means and merged to the macro panel. Months without a hybrid prediction keep actual USD/KRW, matching the earlier controlled error-propagation policy.",
+        f"- Scenario shock: predicted USD/KRW at each event month is multiplied by `{1.0 + scenario_shock_pct:.3f}`. The scenario current-month log shock is computed against the unshocked predicted `t-1`, so the event shock is present in `scenario_fx_change_t`.",
+        "",
+        "## Models",
+        "",
+        "- `LocalProjection_OLS`: separate OLS for each target and horizon with HAC covariance for p-values.",
+        "- `LocalProjection_Ridge`: separate Ridge model with features scaled on the train split only.",
+        "- `LocalProjection_ElasticNet`: separate ElasticNet/ElasticNetCV model using time-series CV when the event sample is large enough.",
+        "- Feature set: `fx_shock_t`, `fx_lag1..fx_lag6`, and `target_lag1`. External controls were intentionally left out because the event sample is small after target/horizon filtering.",
+        "- Split: target/horizon-specific time split by `event_date`; the last roughly 25% of valid anomaly event dates are held out for test.",
+        "- Leakage control: scalers are fit only on train rows, target future values are used only as `actual_response`, and lag/response lookup always uses the original calendar index.",
+        "",
+        "## Performance Summary",
+        "",
+    ]
+
+    if overall_rows.empty:
+        lines.append("- No event-time LP metrics were generated.")
+    else:
+        lines.append("Overall predicted-FX test metrics by model:")
+        for row in overall_rows.to_dict("records"):
+            lines.append(
+                f"- `{row['model']}`: avg RMSE={format_float(row['avg_rmse_response'], 6)}, "
+                f"avg NRMSE={format_float(row['avg_nrmse_response'], 4)}, "
+                f"avg level-delta RMSE={format_float(row['avg_rmse_level_delta'], 4)}, "
+                f"targets={int(row.get('targets', 0))}"
+            )
+
+    lines.extend(["", "Target-level selected plot models:"])
+    if selected_model_rows.empty:
+        lines.append("- n/a")
+    else:
+        for row in selected_model_rows.sort_values("target").to_dict("records"):
+            peak = scenario_peaks.get(row["target"], {})
+            lines.append(
+                f"- `{row['target']}`: `{row['model']}`, "
+                f"avg NRMSE={format_float(row['avg_nrmse_response'], 4)}, "
+                f"avg RMSE={format_float(row['avg_rmse_response'], 6)}, "
+                f"peak scenario-baseline response={format_float(peak.get('response_delta_vs_predicted'), 6)} "
+                f"at h={peak.get('horizon', 'n/a')}"
+            )
+
+    lines.extend(["", "Required target comments:"])
+    for target in ["KOSPI", "Import_Price_Index", "Industrial_Production", "Trade_Balance"]:
+        row = selected_model_rows[selected_model_rows["target"].eq(target)]
+        peak = scenario_peaks.get(target, {})
+        if row.empty:
+            lines.append(f"- `{target}`: no selected event-time model was available.")
+            continue
+        row_dict = row.iloc[0].to_dict()
+        try:
+            peak_delta = float(peak.get("response_delta_vs_predicted", np.nan))
+        except Exception:
+            peak_delta = np.nan
+        if not np.isfinite(peak_delta):
+            direction = "n/a"
+        elif abs(peak_delta) <= 1e-10:
+            direction = "near-zero"
+        else:
+            direction = "positive" if peak_delta > 0 else "negative"
+        stability = "stable" if target in stable_targets else "less stable"
+        lines.append(
+            f"- `{target}`: best `{row_dict['model']}` with avg NRMSE={format_float(row_dict['avg_nrmse_response'], 4)}; "
+            f"scenario effect is {direction} and peaks around h={peak.get('horizon', 'n/a')} ({stability})."
+        )
+
+    lines.extend(["", "## Main Interpretation", ""])
+    if scenario_peaks:
+        peak_table = pd.DataFrame(scenario_peaks.values())
+        strongest = peak_table.assign(abs_delta=peak_table["response_delta_vs_predicted"].abs()).sort_values(
+            "abs_delta", ascending=False
+        )
+        lines.append("Largest scenario-baseline event responses by absolute response delta:")
+        for row in strongest.head(5).to_dict("records"):
+            direction = "up" if row["response_delta_vs_predicted"] > 0 else "down"
+            lines.append(
+                f"- `{row['target']}` moves {direction} most at h={int(row['horizon'])}: "
+                f"response delta={format_float(row['response_delta_vs_predicted'], 6)}, "
+                f"level-delta effect={format_float(row['level_delta_vs_predicted'], 4)}"
+            )
+    else:
+        lines.append("- Scenario peaks were not available.")
+    lines.append(
+        f"- More stable target fits by predicted-FX NRMSE: {', '.join(f'`{t}`' for t in stable_targets) if stable_targets else 'n/a'}."
+    )
+    lines.append(
+        f"- Less stable target fits needing cautious interpretation: {', '.join(f'`{t}`' for t in unstable_targets) if unstable_targets else 'n/a'}."
+    )
+
+    lines.extend(
+        [
+            "",
+            "## Outputs",
+            "",
+            "- `analysis/fx_impact/reports/final/event_panel/anomaly_event_panel.csv`",
+            "- `analysis/fx_impact/reports/final/event_panel/local_projection_coefficients.csv`",
+            "- `analysis/fx_impact/reports/final/event_panel/event_response_forecasts.csv`",
+            "- `analysis/fx_impact/reports/final/event_panel/local_projection_metrics.csv`",
+            "- `analysis/fx_impact/reports/final/event_panel/scenario_response_forecasts.csv`",
+            "- `analysis/fx_impact/reports/final/event_panel/event_panel_model_selection.csv`",
+            "- `analysis/fx_impact/reports/final/event_panel/plots/response_*.png`",
+            "- `analysis/fx_impact/reports/final/event_panel/plots/response_summary_top_targets.png`",
+            "- `analysis/fx_impact/reports/final/plots/response_*.png` contains the latest event-time response plots for quick access. Existing calendar-time output tables are preserved.",
+            "",
+            "## Reproduction Command",
+            "",
+            "```bash",
+            "python analysis/fx_impact/run_final_fx_impact_pipeline.py",
+            "```",
+        ]
+    )
+    (FX_IMPACT_DIR / "result.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the final USD/KRW FX impact modeling pipeline.")
     parser.add_argument("--macro-path", type=Path, default=MACRO_PATH)
@@ -2044,17 +2887,17 @@ def main() -> None:
     macro_df = load_macro_dataset(args.macro_path)
     _ = load_period_definition(args.period_definition)
 
-    print("[1/3] Selecting FX-sensitive macro/financial targets...")
+    print("[1/4] Selecting FX-sensitive macro/financial targets...")
     ranking, _ = run_target_selection(macro_df)
     selected_targets = ranking[ranking["selected_for_final_model"]]["target"].tolist()
     print(f"Selected targets: {', '.join(selected_targets)}")
 
-    print("[2/3] Comparing hybrid FX prediction paths...")
+    print("[2/4] Comparing hybrid FX prediction paths...")
     fx_comparison, selected_predictions, selected_source = run_fx_model_selection(macro_df, selected_targets)
     print(f"Selected FX source: {selected_source}")
     print(fx_comparison[["source_model", "selected", "daily_available_rmse", "downstream_avg_rmse"]].to_string(index=False))
 
-    print("[3/3] Running final FX impact models...")
+    print("[3/4] Preserving calendar-time comparison models...")
     model_comparison, forecast_df, lag_summary, scenario_df = run_final_impact_models(
         macro_df,
         ranking,
@@ -2068,6 +2911,29 @@ def main() -> None:
     if not model_comparison.empty:
         print(model_comparison[model_comparison["target"].eq("__ALL__")].to_string(index=False))
     print(f"Generated {len(forecast_df)} forecast rows and {len(scenario_df)} scenario rows.")
+
+    print("[4/4] Running event-time local projection final pipeline...")
+    event_outputs = run_event_time_local_projection_analysis(
+        macro_df,
+        ranking,
+        selected_predictions,
+        selected_source,
+        scenario_shock_pct=args.scenario_shock_pct,
+    )
+    write_event_panel_result_md(
+        ranking,
+        selected_source,
+        scenario_shock_pct=args.scenario_shock_pct,
+        event_outputs=event_outputs,
+    )
+    event_panel = event_outputs["event_panel"]
+    event_metrics = event_outputs["metrics"]
+    print(
+        "Event-time LP outputs: "
+        f"{len(event_panel)} panel rows, "
+        f"{event_panel['event_date'].nunique() if not event_panel.empty else 0} anomaly event months, "
+        f"{len(event_metrics)} metric rows."
+    )
     print(f"Reports saved under {REPORT_DIR.relative_to(BASE_DIR)}")
 
 
