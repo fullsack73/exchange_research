@@ -1,0 +1,26 @@
+flowchart TB
+    subgraph left_col[" "]
+        direction TB
+        A["원천 데이터 수집"] --> B["전처리 및 통합 데이터셋 생성"]
+        B --> C["장기 상관관계 분석"]
+        C --> D["Anomaly Block 탐지"]
+        D --> E["SHAP 기반 요인 분석"]
+    end
+
+    subgraph right_col[" "]
+        direction TB
+        F["M2 구성요소 분석"] --> G["단기 유동성 임계점 검증"]
+        G --> H["Granger Causality 검정"]
+        H --> I["LSTM/Hybrid 예측 검증"]
+        I --> J["환율 영향 확장 분석"]
+    end
+
+    A ~~~ F
+    B ~~~ G
+    C ~~~ H
+    D ~~~ I
+    E ~~~ J
+    E --> F
+
+    style left_col fill:transparent,stroke:transparent
+    style right_col fill:transparent,stroke:transparent

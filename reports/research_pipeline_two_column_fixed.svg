@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="780" height="520" viewBox="0 0 780 520">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#334155"/>
+    </marker>
+    <style>
+      .node { fill: #f8fafc; stroke: #334155; stroke-width: 1.6; rx: 8; }
+      .label { font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", Arial, sans-serif; font-size: 17px; font-weight: 600; fill: #111827; text-anchor: middle; dominant-baseline: middle; }
+      .arrow { fill: none; stroke: #334155; stroke-width: 2; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <rect width="780" height="520" fill="#ffffff"/>
+
+  <rect class="node" x="40" y="30" width="300" height="58"/>
+  <text class="label" x="190" y="59">원천 데이터 수집</text>
+
+  <rect class="node" x="40" y="125" width="300" height="58"/>
+  <text class="label" x="190" y="154">전처리 및 통합 데이터셋 생성</text>
+
+  <rect class="node" x="40" y="220" width="300" height="58"/>
+  <text class="label" x="190" y="249">장기 상관관계 분석</text>
+
+  <rect class="node" x="40" y="315" width="300" height="58"/>
+  <text class="label" x="190" y="344">Anomaly Block 탐지</text>
+
+  <rect class="node" x="40" y="410" width="300" height="58"/>
+  <text class="label" x="190" y="439">SHAP 기반 요인 분석</text>
+
+  <rect class="node" x="440" y="30" width="300" height="58"/>
+  <text class="label" x="590" y="59">M2 구성요소 분석</text>
+
+  <rect class="node" x="440" y="125" width="300" height="58"/>
+  <text class="label" x="590" y="154">단기 유동성 임계점 검증</text>
+
+  <rect class="node" x="440" y="220" width="300" height="58"/>
+  <text class="label" x="590" y="249">Granger Causality 검정</text>
+
+  <rect class="node" x="440" y="315" width="300" height="58"/>
+  <text class="label" x="590" y="344">LSTM/Hybrid 예측 검증</text>
+
+  <rect class="node" x="440" y="410" width="300" height="58"/>
+  <text class="label" x="590" y="439">환율 영향 확장 분석</text>
+
+  <path class="arrow" d="M190 88 L190 121"/>
+  <path class="arrow" d="M190 183 L190 216"/>
+  <path class="arrow" d="M190 278 L190 311"/>
+  <path class="arrow" d="M190 373 L190 406"/>
+
+  <path class="arrow" d="M590 88 L590 121"/>
+  <path class="arrow" d="M590 183 L590 216"/>
+  <path class="arrow" d="M590 278 L590 311"/>
+  <path class="arrow" d="M590 373 L590 406"/>
+
+  <path class="arrow" d="M340 439 L390 439 L390 59 L436 59"/>
+</svg>
